@@ -40,18 +40,18 @@ struct MainPage {
       Row({ space: 12 }) {
         Stack({ alignContent: Alignment.Center }) {
           Circle()
-            .width(52)
-            .height(52)
+            .width(30)
+            .height(30)
             .fill('#EFFFFFFF')
 
           Image($r('app.media.ailearning_icon'))
-            .width(34)
-            .height(34)
+            .width(20)
+            .height(20)
             .objectFit(ImageFit.Contain)
         }
 
         Text(`您好，${this.nickname}`)
-          .fontSize(24)
+          .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor('#0B1B44')
           .maxLines(1)
@@ -60,17 +60,13 @@ struct MainPage {
 
       Button() {
         Row({ space: 5 }) {
-          Text('↪')
-            .fontSize(19)
-            .fontColor('#2F76FF')
-
           Text('退出')
             .fontSize(16)
             .fontColor('#2F76FF')
         }
         .padding({ left: 14, right: 16 })
       }
-      .height(44)
+      .height(35)
       .borderRadius(22)
       .backgroundColor('#E6FFFFFF')
       .border({ width: 1, color: '#FFFFFFFF' })
@@ -81,7 +77,7 @@ struct MainPage {
     .width('100%')
     .height(58)
     .padding({ left: 22, right: 22 })
-    .margin({ top: 38 })
+    .margin({ top: 10 })
   }
 
   @Builder
@@ -95,7 +91,7 @@ struct MainPage {
 
       Row() {
         Text(title)
-          .fontSize(20)
+          .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor('#0B1B44')
           .layoutWeight(1)
@@ -158,7 +154,7 @@ struct MainPage {
       .margin({ left: 14 })
 
       Text('AI 赋能学习 · 智慧成就未来')
-        .fontSize(16)
+        .fontSize(14)
         .fontWeight(FontWeight.Bold)
         .fontColor('#2D75FF')
         .layoutWeight(1)
@@ -231,7 +227,7 @@ struct MainPage {
 
   build() {
     Stack() {
-      Image($r('app.media.main_background'))
+      Image($r('app.media.main_background2'))
         .width('100%')
         .height('100%')
         .objectFit(ImageFit.Cover)

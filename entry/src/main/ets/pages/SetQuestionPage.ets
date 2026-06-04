@@ -15,10 +15,8 @@ struct SetQuestionPage {
       }
       .width('100%')
       .layoutWeight(1)
-      .backgroundColor('#F6F8FC')
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F6F8FC')
   }
 }

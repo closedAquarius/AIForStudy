@@ -12,12 +12,8 @@ export struct FeaturePageHeader {
           .fontSize(30)
           .fontColor(this.themeColor)
           .margin({ bottom: 3 })
-
-        Text('返回')
-          .fontSize(16)
-          .fontColor(this.themeColor)
       }
-      .width(78)
+      .width(38)
       .height(38)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
@@ -29,22 +25,19 @@ export struct FeaturePageHeader {
 
       Text(this.title)
         .layoutWeight(1)
-        .textAlign(TextAlign.Center)
+        .textAlign(TextAlign.LEFT)
         .fontSize(21)
         .fontWeight(FontWeight.Bold)
         .fontColor('#0B1B44')
         .maxLines(1)
+        .margin({left: 20})
 
       Blank()
         .width(78)
     }
     .width('100%')
-    .height(86)
-    .padding({ left: 18, right: 18, top: 32 })
+    .height(58)
+    .padding({ left: 18, right: 18, top: 10 })
     .backgroundColor('#FFFFFF')
-    .border({
-      width: { bottom: 1 },
-      color: '#EEF2F7'
-    })
   }
 }

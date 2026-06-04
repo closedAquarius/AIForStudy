@@ -1,4 +1,5 @@
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
+import { FeatureBottomNav } from '../components/FeatureBottomNav';
 
 @Entry
 @Component
@@ -15,10 +16,12 @@ struct AiLearningPage {
       }
       .width('100%')
       .layoutWeight(1)
-      .backgroundColor('#F6F8FC')
+
+      FeatureBottomNav({
+        selectedIndex: 4
+      })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F6F8FC')
   }
 }

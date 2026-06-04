@@ -45,6 +45,9 @@ struct LoginPage {
       const result = await login(this.username.trim(), this.password);
 
       if (result.success && result.data?.user) {
+        AppStorage.SetOrCreate<string>('token', result.data.token ?? '');
+        AppStorage.SetOrCreate<string>('currentUser', JSON.stringify(result.data.user));
+
         this.message = '登录成功';
         await this.goMain(result.data.user, result.data.token ?? '');
         return;

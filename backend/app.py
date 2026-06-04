@@ -2,13 +2,17 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-from flask import Flask, jsonify, request
+from flask import Flask, request
 from pymysql.err import IntegrityError
+
+from api_utils import success, fail, public_user
+from question_bank_api import question_bank_bp
 
 from db import db_cursor
 
 
 app = Flask(__name__)
+app.register_blueprint(question_bank_bp, url_prefix="/api")
 
 
 @app.after_request
@@ -22,27 +26,6 @@ def add_cors_headers(response):
 @app.route("/api/<path:_path>", methods=["OPTIONS"])
 def cors_preflight(_path):
     return "", 204
-
-
-def success(data=None, message="ok", status=200):
-    payload = {"success": True, "message": message}
-    if data is not None:
-        payload["data"] = data
-    return jsonify(payload), status
-
-
-def fail(message, status=400):
-    return jsonify({"success": False, "message": message}), status
-
-
-def public_user(row):
-    return {
-        "id": row["id"],
-        "username": row["username"],
-        "nickname": row["nickname"],
-        "email": row.get("email"),
-        "role": row["role"],
-    }
 
 
 @app.get("/api/health")

@@ -3,8 +3,11 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, request
 from pymysql.err import IntegrityError
+
+from api_utils import success, fail, public_user
+from question_bank_api import question_bank_bp
 from werkzeug.utils import secure_filename
 
 from db import db_cursor
@@ -14,6 +17,7 @@ from services.zhipu_question_service import ZhipuQuestionService
 
 
 app = Flask(__name__)
+app.register_blueprint(question_bank_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -30,27 +34,6 @@ def add_cors_headers(response):
 @app.route("/api/<path:_path>", methods=["OPTIONS"])
 def cors_preflight(_path):
     return "", 204
-
-
-def success(data=None, message="ok", status=200):
-    payload = {"success": True, "message": message}
-    if data is not None:
-        payload["data"] = data
-    return jsonify(payload), status
-
-
-def fail(message, status=400):
-    return jsonify({"success": False, "message": message}), status
-
-
-def public_user(row):
-    return {
-        "id": row["id"],
-        "username": row["username"],
-        "nickname": row["nickname"],
-        "email": row.get("email"),
-        "role": row["role"],
-    }
 
 
 def optional_int(value):

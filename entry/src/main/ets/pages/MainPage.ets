@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { LoginUser } from '../common/ApiClient';
+import { FeatureBottomNav } from '../components/FeatureBottomNav';
 
 @Entry
 @Component
@@ -173,58 +174,6 @@ struct MainPage {
     .margin({ left: 22, right: 22, top: 12 })
   }
 
-  @Builder
-  NavItem(icon: Resource, title: string, pageUrl: string, selected: boolean) {
-    Column({ space: 3 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        if (selected) {
-          Column()
-            .width(50)
-            .height(38)
-            .borderRadius(15)
-            .backgroundColor('#EAF3FF')
-        }
-
-        Image(icon)
-          .width(25)
-          .height(25)
-          .objectFit(ImageFit.Contain)
-      }
-      .width(54)
-      .height(38)
-
-      Text(title)
-        .fontSize(12)
-        .fontWeight(selected ? FontWeight.Bold : FontWeight.Medium)
-        .fontColor(selected ? '#2D75FF' : '#8A96AD')
-        .maxLines(1)
-    }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .onClick(() => {
-      if (!selected) {
-        this.goPage(pageUrl);
-      }
-    })
-  }
-
-  @Builder
-  BottomNav() {
-    Row() {
-      this.NavItem($r('app.media.main_icon'), '首页', 'pages/MainPage', true)
-      this.NavItem($r('app.media.practice_icon'), '题库刷题', 'pages/PracticePage', false)
-      this.NavItem($r('app.media.setquestion_icon'), '文档出题', 'pages/SetQuestionPage', false)
-      this.NavItem($r('app.media.diary_icon'), '学习日记', 'pages/DiaryPage', false)
-      this.NavItem($r('app.media.ailearning_icon'), 'AI辅学', 'pages/AiLearningPage', false)
-    }
-    .width('100%')
-    .height(78)
-    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-    .backgroundColor('#F4FFFFFF')
-    .border({ width: 1, color: '#FFFFFFFF' })
-  }
-
   build() {
     Stack() {
       Image($r('app.media.main_background2'))
@@ -292,7 +241,9 @@ struct MainPage {
 
         this.SloganBar()
 
-        this.BottomNav()
+        FeatureBottomNav({
+          selectedIndex: 0
+        })
       }
       .width('100%')
       .height('100%')

@@ -1,4 +1,5 @@
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
+import { FeatureBottomNav } from '../components/FeatureBottomNav';
 
 @Entry
 @Component
@@ -15,6 +16,10 @@ struct DiaryPage {
       }
       .width('100%')
       .layoutWeight(1)
+
+      FeatureBottomNav({
+        selectedIndex: 3
+      })
     }
     .width('100%')
     .height('100%')

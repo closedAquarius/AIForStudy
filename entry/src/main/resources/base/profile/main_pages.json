@@ -5,6 +5,7 @@
     "pages/MainPage",
     "pages/PracticePage",
     "pages/QuestionBankDetailPage",
+    "pages/QuestionListPage",
     "pages/SetQuestionPage",
     "pages/DiaryPage",
     "pages/AiLearningPage"

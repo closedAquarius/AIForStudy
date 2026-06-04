@@ -96,7 +96,12 @@ struct QuestionBankDetailPage {
           .backgroundColor('#EEF5FF')
           .fontColor('#2D75FF')
           .onClick(() => {
-            this.message = '查看题目页面将在下一步开发';
+            router.pushUrl({
+              url: 'pages/QuestionListPage',
+              params: {
+                bankId: this.bankId.toString()
+              }
+            });
           })
 
         Button('开始刷题')

@@ -112,17 +112,19 @@ interface GenerateQuestionsRequest {
   owner_user_id: number;
 }
 
+interface HttpHeader {
+  'Content-Type': string;
+}
+
 interface MultipartField {
   name: string;
   value: string;
 }
 
-class HttpHeader {
-  'Content-Type': string;
-
-  constructor(contentType: string) {
-    this['Content-Type'] = contentType;
-  }
+function createHttpHeader(contentType: string): HttpHeader {
+  return {
+    'Content-Type': contentType
+  };
 }
 
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest;
@@ -137,7 +139,7 @@ function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
       `${API_BASE_URL}${path}`,
       {
         method: http.RequestMethod.POST,
-        header: new HttpHeader('application/json'),
+        header: createHttpHeader('application/json'),
         extraData: JSON.stringify(body),
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 6000,
@@ -232,7 +234,7 @@ export function generateQuestionsFromFile(
       `${API_BASE_URL}/documents/generate-questions-from-file`,
       {
         method: http.RequestMethod.POST,
-        header: new HttpHeader(`multipart/form-data; boundary=${boundary}`),
+        header: createHttpHeader(`multipart/form-data; boundary=${boundary}`),
         extraData: body,
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 30000,

@@ -1,14 +1,22 @@
 import os
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from flask import Flask, jsonify, request
 from pymysql.err import IntegrityError
+from werkzeug.utils import secure_filename
 
 from db import db_cursor
+from services.document_text_extractor import DocumentTextExtractor
+from services.question_persistence_service import QuestionPersistenceService
+from services.zhipu_question_service import ZhipuQuestionService
 
 
 app = Flask(__name__)
+
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 @app.after_request
@@ -43,6 +51,12 @@ def public_user(row):
         "email": row.get("email"),
         "role": row["role"],
     }
+
+
+def optional_int(value):
+    if value is None or value == "":
+        return None
+    return int(value)
 
 
 @app.get("/api/health")
@@ -158,6 +172,134 @@ def dashboard_summary():
             {"title": "AI 辅学", "value": "提问、讲解、出卷", "status": "规划中"},
         ]
     })
+
+
+@app.post("/api/ai/generate-questions")
+def generate_questions_from_document_text():
+    body = request.get_json(silent=True) or {}
+    document_text = (body.get("document_text") or "").strip()
+    subject = (body.get("subject") or "").strip()
+    question_count = body.get("question_count") or 5
+    question_types = body.get("question_types") or None
+    difficulty = body.get("difficulty")
+    extra_prompt = (body.get("extra_prompt") or "").strip()
+    save_to_db = bool(body.get("save_to_db", False))
+    owner_user_id = body.get("owner_user_id")
+    question_bank_id = body.get("question_bank_id")
+
+    if len(document_text) < 20:
+        return fail("document_text 内容过短，无法生成题目")
+    if question_types is not None and not isinstance(question_types, list):
+        return fail("question_types 必须是数组，例如 ['single_choice', 'blank']")
+
+    try:
+        service = ZhipuQuestionService()
+        result = service.generate_questions(
+            document_text=document_text,
+            subject=subject,
+            question_count=int(question_count),
+            question_types=question_types,
+            difficulty=difficulty,
+            extra_prompt=extra_prompt,
+        )
+        if save_to_db:
+            save_result = QuestionPersistenceService().save_generated_questions(
+                generated=result,
+                owner_user_id=optional_int(owner_user_id),
+                question_bank_id=optional_int(question_bank_id),
+            )
+            result["saved"] = save_result
+        return success(result, "AI 出题成功")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except RuntimeError as exc:
+        return fail(str(exc), 500)
+    except Exception as exc:
+        return fail(f"AI 出题失败: {exc}", 500)
+
+
+@app.post("/api/questions/save-generated")
+def save_generated_questions():
+    body = request.get_json(silent=True) or {}
+    generated = body.get("generated") or {}
+    owner_user_id = body.get("owner_user_id")
+    question_bank_id = body.get("question_bank_id")
+
+    if not isinstance(generated, dict):
+        return fail("generated 必须是 AI 出题接口返回的数据对象")
+
+    try:
+        save_result = QuestionPersistenceService().save_generated_questions(
+            generated=generated,
+            owner_user_id=optional_int(owner_user_id),
+            question_bank_id=optional_int(question_bank_id),
+        )
+        return success(save_result, "题目保存成功")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except Exception as exc:
+        return fail(f"题目保存失败: {exc}", 500)
+
+
+@app.post("/api/documents/generate-questions-from-file")
+def generate_questions_from_uploaded_file():
+    uploaded_file = request.files.get("file")
+    if uploaded_file is None or uploaded_file.filename == "":
+        return fail("请上传课程文档文件")
+
+    subject = (request.form.get("subject") or "").strip()
+    question_count = request.form.get("question_count") or 5
+    difficulty = request.form.get("difficulty")
+    extra_prompt = (request.form.get("extra_prompt") or "").strip()
+    save_to_db = (request.form.get("save_to_db") or "true").lower() == "true"
+    owner_user_id = request.form.get("owner_user_id")
+    question_bank_id = request.form.get("question_bank_id")
+    raw_question_types = request.form.get("question_types") or ""
+    question_types = [item.strip() for item in raw_question_types.split(",") if item.strip()]
+
+    original_name = uploaded_file.filename
+    safe_name = secure_filename(original_name)
+    if not safe_name:
+        safe_name = f"upload-{uuid.uuid4().hex}"
+    saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}-{safe_name}"
+    uploaded_file.save(saved_path)
+
+    try:
+        document_text = DocumentTextExtractor().extract(saved_path, original_name)
+        if len(document_text.strip()) < 20:
+            return fail("文档解析出的文本过短，无法生成题目")
+
+        service = ZhipuQuestionService()
+        result = service.generate_questions(
+            document_text=document_text[:20000],
+            subject=subject,
+            question_count=int(question_count),
+            question_types=question_types,
+            difficulty=difficulty,
+            extra_prompt=extra_prompt,
+        )
+
+        if save_to_db:
+            save_result = QuestionPersistenceService().save_generated_questions(
+                generated=result,
+                owner_user_id=optional_int(owner_user_id),
+                question_bank_id=optional_int(question_bank_id),
+            )
+            result["saved"] = save_result
+
+        result["document"] = {
+            "file_name": original_name,
+            "text_length": len(document_text),
+            "used_text_length": min(len(document_text), 20000),
+        }
+        return success(result, "文档解析、AI 出题并保存成功" if save_to_db else "文档解析和 AI 出题成功")
+    except ValueError as exc:
+        return fail(str(exc), 200)
+    except RuntimeError as exc:
+        return fail(str(exc), 200)
+    except Exception as exc:
+        app.logger.exception("generate questions from uploaded file failed")
+        return fail(f"文档出题失败: {exc}", 200)
 
 
 if __name__ == "__main__":

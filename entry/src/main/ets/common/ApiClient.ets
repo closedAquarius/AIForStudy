@@ -1,4 +1,6 @@
 import http from '@ohos.net.http';
+import util from '@ohos.util';
+import { fileIo } from '@kit.CoreFileKit';
 
 export interface LoginUser {
   id: number;
@@ -19,6 +21,75 @@ export interface AuthData {
   user?: LoginUser;
 }
 
+export interface QuestionOption {
+  option_key: string;
+  content: string;
+  is_correct: boolean;
+  sort_order: number;
+}
+
+export interface QuestionAnswer {
+  answer_text: string;
+  answer_json?: string;
+  is_primary: boolean;
+}
+
+export interface GeneratedQuestion {
+  type: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledge_point: string;
+  tags: string[];
+  options: QuestionOption[];
+  answers: QuestionAnswer[];
+  extra?: string;
+}
+
+export interface GeneratedQuestionBank {
+  name: string;
+  description: string;
+  subject: string;
+  source_type: string;
+}
+
+export interface GenerateQuestionsData {
+  question_bank: GeneratedQuestionBank;
+  questions: GeneratedQuestion[];
+  saved?: SaveGeneratedData;
+  document?: UploadedDocumentInfo;
+}
+
+export interface GenerateQuestionsApiResult {
+  success: boolean;
+  message: string;
+  data?: GenerateQuestionsData;
+}
+
+export interface SaveGeneratedData {
+  question_bank_id: number;
+  subject_id: number;
+  saved_count: number;
+  question_ids: number[];
+}
+
+export interface UploadedDocumentInfo {
+  file_name: string;
+  text_length: number;
+  used_text_length: number;
+}
+
+export interface UploadGenerateOptions {
+  subject: string;
+  questionCount: number;
+  questionTypes: string[];
+  difficulty: number;
+  extraPrompt: string;
+  saveToDb: boolean;
+  ownerUserId: number;
+}
+
 interface LoginRequest {
   username: string;
   password: string;
@@ -30,19 +101,45 @@ interface RegisterRequest {
   nickname: string;
 }
 
+interface GenerateQuestionsRequest {
+  document_text: string;
+  subject: string;
+  question_count: number;
+  question_types: string[];
+  difficulty: number;
+  extra_prompt: string;
+  save_to_db: boolean;
+  owner_user_id: number;
+}
+
+interface MultipartField {
+  name: string;
+  value: string;
+}
+
+class HttpHeader {
+  'Content-Type': string;
+
+  constructor(contentType: string) {
+    this['Content-Type'] = contentType;
+  }
+}
+
+type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest;
+type ResponseBody = ApiResult | GenerateQuestionsApiResult;
+
 const API_BASE_URL: string = 'http://192.168.253.1:5000/api';
 
-function postJson(path: string, body: LoginRequest | RegisterRequest): Promise<ApiResult> {
-  return new Promise((resolve: (value: ApiResult) => void, reject: (reason: Error) => void) => {
+function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
+  return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
     const request = http.createHttp();
     request.request(
       `${API_BASE_URL}${path}`,
       {
         method: http.RequestMethod.POST,
-        header: {
-          'Content-Type': 'application/json'
-        },
+        header: new HttpHeader('application/json'),
         extraData: JSON.stringify(body),
+        expectDataType: http.HttpDataType.STRING,
         connectTimeout: 6000,
         readTimeout: 6000
       },
@@ -55,7 +152,7 @@ function postJson(path: string, body: LoginRequest | RegisterRequest): Promise<A
 
         try {
           const raw = response.result as string;
-          resolve(JSON.parse(raw) as ApiResult);
+          resolve(JSON.parse(raw) as ResponseBody);
         } catch (parseError) {
           reject(new Error('后端响应解析失败'));
         }
@@ -69,7 +166,7 @@ export function login(username: string, password: string): Promise<ApiResult> {
     username: username,
     password: password
   };
-  return postJson('/auth/login', body);
+  return postJson('/auth/login', body) as Promise<ApiResult>;
 }
 
 export function register(username: string, password: string, nickname: string): Promise<ApiResult> {
@@ -78,5 +175,160 @@ export function register(username: string, password: string, nickname: string): 
     password: password,
     nickname: nickname
   };
-  return postJson('/auth/register', body);
+  return postJson('/auth/register', body) as Promise<ApiResult>;
+}
+
+export function generateQuestions(
+  documentText: string,
+  subject: string,
+  questionCount: number,
+  questionTypes: string[],
+  difficulty: number,
+  extraPrompt: string,
+  saveToDb: boolean = true,
+  ownerUserId: number = 1
+): Promise<GenerateQuestionsApiResult> {
+  const body: GenerateQuestionsRequest = {
+    document_text: documentText,
+    subject: subject,
+    question_count: questionCount,
+    question_types: questionTypes,
+    difficulty: difficulty,
+    extra_prompt: extraPrompt,
+    save_to_db: saveToDb,
+    owner_user_id: ownerUserId
+  };
+  return postJson('/ai/generate-questions', body) as Promise<GenerateQuestionsApiResult>;
+}
+
+export function generateQuestionsFromFile(
+  filePath: string,
+  fileName: string,
+  options: UploadGenerateOptions
+): Promise<GenerateQuestionsApiResult> {
+  return new Promise((resolve: (value: GenerateQuestionsApiResult) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const boundary = `AIForStudyBoundary${new Date().getTime()}`;
+    const formData: MultipartField[] = [
+      { name: 'subject', value: options.subject },
+      { name: 'question_count', value: `${options.questionCount}` },
+      { name: 'question_types', value: options.questionTypes.join(',') },
+      { name: 'difficulty', value: `${options.difficulty}` },
+      { name: 'extra_prompt', value: options.extraPrompt },
+      { name: 'save_to_db', value: options.saveToDb ? 'true' : 'false' },
+      { name: 'owner_user_id', value: `${options.ownerUserId}` }
+    ];
+
+    let body: ArrayBuffer;
+    try {
+      body = buildMultipartBody(boundary, formData, filePath, fileName);
+    } catch (error) {
+      request.destroy();
+      reject(new Error(`读取文件失败：${(error as Error).message}`));
+      return;
+    }
+
+    request.request(
+      `${API_BASE_URL}/documents/generate-questions-from-file`,
+      {
+        method: http.RequestMethod.POST,
+        header: new HttpHeader(`multipart/form-data; boundary=${boundary}`),
+        extraData: body,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 30000,
+        readTimeout: 300000
+      },
+      (error, response) => {
+        request.destroy();
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+
+        const statusCode = response.responseCode as number;
+        const raw = response.result as string;
+        if (statusCode < 200 || statusCode >= 300) {
+          reject(new Error(`后端返回 ${statusCode}：${raw}`));
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(raw) as GenerateQuestionsApiResult);
+        } catch (parseError) {
+          reject(new Error(`后端响应解析失败：${raw}`));
+        }
+      }
+    );
+  });
+}
+
+function buildMultipartBody(
+  boundary: string,
+  fields: MultipartField[],
+  filePath: string,
+  fileName: string
+): ArrayBuffer {
+  let prefix = '';
+  fields.forEach((field: MultipartField) => {
+    prefix += `--${boundary}\r\n`;
+    prefix += `Content-Disposition: form-data; name="${field.name}"\r\n\r\n`;
+    prefix += `${field.value}\r\n`;
+  });
+  prefix += `--${boundary}\r\n`;
+  prefix += `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`;
+  prefix += `Content-Type: ${mimeTypeOf(fileName)}\r\n\r\n`;
+
+  const suffix = `\r\n--${boundary}--\r\n`;
+  const prefixBytes = encodeUtf8(prefix);
+  const fileBytes = readFileBytes(filePath);
+  const suffixBytes = encodeUtf8(suffix);
+  return concatBytes([prefixBytes, fileBytes, suffixBytes]);
+}
+
+function readFileBytes(filePath: string): Uint8Array {
+  const stat = fileIo.statSync(filePath);
+  const buffer = new ArrayBuffer(stat.size);
+  const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_ONLY);
+  try {
+    fileIo.readSync(file.fd, buffer);
+  } finally {
+    fileIo.closeSync(file);
+  }
+  return new Uint8Array(buffer);
+}
+
+function encodeUtf8(value: string): Uint8Array {
+  return new util.TextEncoder().encodeInto(value);
+}
+
+function concatBytes(parts: Uint8Array[]): ArrayBuffer {
+  let total = 0;
+  parts.forEach((part: Uint8Array) => {
+    total += part.length;
+  });
+
+  const result = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach((part: Uint8Array) => {
+    result.set(part, offset);
+    offset += part.length;
+  });
+  return result.buffer;
+}
+
+function mimeTypeOf(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.pptx')) {
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  }
+  if (lower.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (lower.endsWith('.pdf')) {
+    return 'application/pdf';
+  }
+  if (lower.endsWith('.txt')) {
+    return 'text/plain';
+  }
+  return 'application/octet-stream';
 }

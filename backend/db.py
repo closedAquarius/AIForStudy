@@ -1,10 +1,12 @@
 import os
 from contextlib import contextmanager
+from pathlib import Path
 
 import pymysql
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
+load_dotenv(Path(__file__).with_name(".env.example"), override=False)
 
 
 def get_db_config():

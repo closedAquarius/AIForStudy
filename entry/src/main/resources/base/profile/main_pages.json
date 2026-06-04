@@ -1,5 +1,11 @@
 {
   "src": [
-    "pages/Index"
+    "pages/LoginPage",
+    "pages/RegisterPage",
+    "pages/MainPage",
+    "pages/PracticePage",
+    "pages/SetQuestionPage",
+    "pages/DiaryPage",
+    "pages/AiLearningPage"
   ]
 }

@@ -1,0 +1,307 @@
+import { router } from '@kit.ArkUI';
+import { LoginUser } from '../common/ApiClient';
+
+@Entry
+@Component
+struct MainPage {
+  @State nickname: string = '用户名';
+
+  aboutToAppear(): void {
+    const params = router.getParams() as Record<string, string>;
+
+    if (params) {
+      const userText = params['user'] ?? '';
+      if (userText.length > 0) {
+        try {
+          const user = JSON.parse(userText) as LoginUser;
+          this.nickname = user.nickname || user.username || '用户名';
+        } catch (error) {
+          this.nickname = '用户名';
+        }
+      }
+    }
+  }
+
+  private logout(): void {
+    router.replaceUrl({
+      url: 'pages/LoginPage'
+    });
+  }
+
+  private goPage(url: string): void {
+    router.pushUrl({
+      url: url
+    });
+  }
+
+  @Builder
+  TopBar() {
+    Row() {
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle()
+            .width(52)
+            .height(52)
+            .fill('#EFFFFFFF')
+
+          Image($r('app.media.ailearning_icon'))
+            .width(34)
+            .height(34)
+            .objectFit(ImageFit.Contain)
+        }
+
+        Text(`您好，${this.nickname}`)
+          .fontSize(24)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+          .maxLines(1)
+      }
+      .layoutWeight(1)
+
+      Button() {
+        Row({ space: 5 }) {
+          Text('↪')
+            .fontSize(19)
+            .fontColor('#2F76FF')
+
+          Text('退出')
+            .fontSize(16)
+            .fontColor('#2F76FF')
+        }
+        .padding({ left: 14, right: 16 })
+      }
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor('#E6FFFFFF')
+      .border({ width: 1, color: '#FFFFFFFF' })
+      .onClick(() => {
+        this.logout();
+      })
+    }
+    .width('100%')
+    .height(58)
+    .padding({ left: 22, right: 22 })
+    .margin({ top: 38 })
+  }
+
+  @Builder
+  ModuleCard(icon: Resource, title: string, desc: string, bgColor: string, arrowColor: string, pageUrl: string) {
+    Column() {
+      Image(icon)
+        .width('76%')
+        .height(76)
+        .objectFit(ImageFit.Contain)
+        .margin({ top: 8 })
+
+      Row() {
+        Text(title)
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+          .layoutWeight(1)
+          .maxLines(1)
+
+        Stack({ alignContent: Alignment.Center }) {
+          Circle()
+            .width(30)
+            .height(30)
+            .fill('#F4F7FF')
+
+          Text('›')
+            .fontSize(25)
+            .fontColor(arrowColor)
+            .margin({ bottom: 3 })
+        }
+      }
+      .width('100%')
+      .padding({ left: 14, right: 12 })
+      .margin({ top: 2 })
+
+      Text(desc)
+        .width('100%')
+        .fontSize(12)
+        .fontColor('#65718E')
+        .lineHeight(17)
+        .padding({ left: 14, right: 10 })
+        .margin({ top: 4 })
+        .maxLines(2)
+    }
+    .width('100%')
+    .height(154)
+    .borderRadius(22)
+    .backgroundColor(bgColor)
+    .border({ width: 1, color: '#FFFFFFFF' })
+    .shadow({
+      radius: 10,
+      color: '#146EA8FF',
+      offsetX: 0,
+      offsetY: 5
+    })
+    .onClick(() => {
+      this.goPage(pageUrl);
+    })
+  }
+
+  @Builder
+  SloganBar() {
+    Row() {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(38)
+          .height(38)
+          .fill('#EAF3FF')
+
+        Text('♛')
+          .fontSize(18)
+          .fontColor('#347DFF')
+      }
+      .margin({ left: 14 })
+
+      Text('AI 赋能学习 · 智慧成就未来')
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#2D75FF')
+        .layoutWeight(1)
+        .margin({ left: 10 })
+
+      Text('›')
+        .fontSize(27)
+        .fontColor('#6A9BFF')
+        .margin({ right: 16, bottom: 3 })
+    }
+    .width('100%')
+    .height(50)
+    .borderRadius(22)
+    .backgroundColor('#DFFFFFFF')
+    .border({ width: 1, color: '#FFFFFFFF' })
+    .margin({ left: 22, right: 22, top: 12 })
+  }
+
+  @Builder
+  NavItem(icon: Resource, title: string, pageUrl: string, selected: boolean) {
+    Column({ space: 3 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        if (selected) {
+          Column()
+            .width(50)
+            .height(38)
+            .borderRadius(15)
+            .backgroundColor('#EAF3FF')
+        }
+
+        Image(icon)
+          .width(25)
+          .height(25)
+          .objectFit(ImageFit.Contain)
+      }
+      .width(54)
+      .height(38)
+
+      Text(title)
+        .fontSize(12)
+        .fontWeight(selected ? FontWeight.Bold : FontWeight.Medium)
+        .fontColor(selected ? '#2D75FF' : '#8A96AD')
+        .maxLines(1)
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      if (!selected) {
+        this.goPage(pageUrl);
+      }
+    })
+  }
+
+  @Builder
+  BottomNav() {
+    Row() {
+      this.NavItem($r('app.media.main_icon'), '首页', 'pages/MainPage', true)
+      this.NavItem($r('app.media.practice_icon'), '题库刷题', 'pages/PracticePage', false)
+      this.NavItem($r('app.media.setquestion_icon'), '文档出题', 'pages/SetQuestionPage', false)
+      this.NavItem($r('app.media.diary_icon'), '学习日记', 'pages/DiaryPage', false)
+      this.NavItem($r('app.media.ailearning_icon'), 'AI辅学', 'pages/AiLearningPage', false)
+    }
+    .width('100%')
+    .height(78)
+    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+    .backgroundColor('#F4FFFFFF')
+    .border({ width: 1, color: '#FFFFFFFF' })
+  }
+
+  build() {
+    Stack() {
+      Image($r('app.media.main_background'))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+
+      Column() {
+        this.TopBar()
+
+        Blank()
+          .layoutWeight(1)
+
+        Grid() {
+          GridItem() {
+            this.ModuleCard(
+              $r('app.media.big_icon1'),
+              '题库刷题',
+              'Excel 导入题库，按标签、错题、已刷状态筛选',
+              '#F8FBFF',
+              '#4B8EFF',
+              'pages/PracticePage'
+            )
+          }
+
+          GridItem() {
+            this.ModuleCard(
+              $r('app.media.big_icon2'),
+              '文档出题',
+              '上传 PPT / Word 后 AI 生成题库或试卷',
+              '#F1FFF9',
+              '#38C98A',
+              'pages/SetQuestionPage'
+            )
+          }
+
+          GridItem() {
+            this.ModuleCard(
+              $r('app.media.big_icon3'),
+              '学习日记',
+              '记录每日学习心得，AI 学习状态分析',
+              '#FAF6FF',
+              '#8B67FF',
+              'pages/DiaryPage'
+            )
+          }
+
+          GridItem() {
+            this.ModuleCard(
+              $r('app.media.big_icon4'),
+              'AI辅学',
+              '提问答疑、错题讲解、生成学习计划',
+              '#FFF8EE',
+              '#FFAA45',
+              'pages/AiLearningPage'
+            )
+          }
+        }
+        .columnsTemplate('1fr 1fr')
+        .columnsGap(14)
+        .rowsGap(14)
+        .width('100%')
+        .height(322)
+        .padding({ left: 22, right: 22 })
+
+        this.SloganBar()
+
+        this.BottomNav()
+      }
+      .width('100%')
+      .height('100%')
+    }
+    .width('100%')
+    .height('100%')
+  }
+}

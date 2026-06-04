@@ -1,237 +1,94 @@
-import { login, register, LoginUser } from '../common/ApiClient';
+import { router } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct Index {
-  @State isLoginMode: boolean = true;
-  @State username: string = 'student1';
-  @State password: string = '123456';
-  @State nickname: string = '';
-  @State message: string = '';
-  @State loading: boolean = false;
-  @State currentUser: LoginUser | null = null;
-
-  private async submit(): Promise<void> {
-    if (this.loading) {
-      return;
-    }
-
-    this.loading = true;
-    this.message = this.isLoginMode ? '正在登录...' : '正在注册...';
-
-    try {
-      const result = this.isLoginMode
-        ? await login(this.username, this.password)
-        : await register(this.username, this.password, this.nickname);
-
-      this.message = result.message;
-      if (result.success && result.data?.user) {
-        this.currentUser = result.data.user;
-      }
-    } catch (error) {
-      this.message = `请求失败，请检查后端服务：${(error as Error).message}`;
-    } finally {
-      this.loading = false;
-    }
+  private goLogin(): void {
+    router.pushUrl({
+      url: 'pages/LoginPage'
+    });
   }
 
   @Builder
-  FeatureItem(title: string, desc: string) {
-    Row() {
-      Column()
-        .width(10)
-        .height(44)
-        .backgroundColor('#2563EB')
-        .borderRadius(5)
+  FeatureCard(icon: string, title: string, desc: string) {
+    Row({ space: 12 }) {
+      Text(icon)
+        .fontSize(24)
+        .width(48)
+        .height(48)
+        .textAlign(TextAlign.Center)
+        .borderRadius(16)
+        .backgroundColor('#EEF2FF')
 
       Column({ space: 4 }) {
         Text(title)
           .fontSize(16)
-          .fontWeight(FontWeight.Medium)
+          .fontWeight(FontWeight.Bold)
           .fontColor('#111827')
+
         Text(desc)
           .fontSize(12)
           .fontColor('#6B7280')
           .maxLines(2)
       }
-      .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding(14)
-    .borderRadius(8)
+    .padding(16)
+    .borderRadius(20)
     .backgroundColor('#FFFFFF')
-    .border({ width: 1, color: '#E5E7EB' })
-  }
-
-  @Builder
-  AuthPanel() {
-    Column({ space: 18 }) {
-      Column({ space: 8 }) {
-        Text('AI 辅学')
-          .fontSize(34)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#111827')
-        Text('题库、文档生成试卷、日记分析和 AI 问答的学习工作台')
-          .fontSize(14)
-          .fontColor('#4B5563')
-          .textAlign(TextAlign.Center)
-      }
-      .alignItems(HorizontalAlign.Center)
-
-      Row() {
-        Button('登录')
-          .layoutWeight(1)
-          .height(42)
-          .backgroundColor(this.isLoginMode ? '#2563EB' : '#EEF2FF')
-          .fontColor(this.isLoginMode ? '#FFFFFF' : '#1D4ED8')
-          .onClick(() => {
-            this.isLoginMode = true;
-            this.message = '';
-          })
-        Button('注册')
-          .layoutWeight(1)
-          .height(42)
-          .backgroundColor(!this.isLoginMode ? '#2563EB' : '#EEF2FF')
-          .fontColor(!this.isLoginMode ? '#FFFFFF' : '#1D4ED8')
-          .onClick(() => {
-            this.isLoginMode = false;
-            this.message = '';
-          })
-      }
-      .width('100%')
-      .height(48)
-      .padding(3)
-      .borderRadius(8)
-      .backgroundColor('#EEF2FF')
-
-      Column({ space: 12 }) {
-        TextInput({ placeholder: '用户名', text: this.username })
-          .height(48)
-          .backgroundColor('#F9FAFB')
-          .onChange((value: string) => {
-            this.username = value;
-          })
-
-        if (!this.isLoginMode) {
-          TextInput({ placeholder: '昵称', text: this.nickname })
-            .height(48)
-            .backgroundColor('#F9FAFB')
-            .onChange((value: string) => {
-              this.nickname = value;
-            })
-        }
-
-        TextInput({ placeholder: '密码', text: this.password })
-          .height(48)
-          .type(InputType.Password)
-          .backgroundColor('#F9FAFB')
-          .onChange((value: string) => {
-            this.password = value;
-          })
-      }
-      .width('100%')
-
-      Button(this.loading ? '处理中...' : (this.isLoginMode ? '登录' : '创建账号'))
-        .width('100%')
-        .height(48)
-        .backgroundColor('#111827')
-        .fontColor('#FFFFFF')
-        .enabled(!this.loading)
-        .onClick(() => {
-          this.submit();
-        })
-
-      if (this.message.length > 0) {
-        Text(this.message)
-          .fontSize(13)
-          .fontColor(this.message.includes('成功') ? '#047857' : '#B91C1C')
-          .textAlign(TextAlign.Center)
-      }
-    }
-    .width('100%')
-    .padding(24)
-    .borderRadius(8)
-    .backgroundColor('#FFFFFF')
-    .border({ width: 1, color: '#E5E7EB' })
-  }
-
-  @Builder
-  HomePanel() {
-    Column({ space: 18 }) {
-      Row() {
-        Column({ space: 4 }) {
-          Text(`你好，${this.currentUser?.nickname ?? '同学'}`)
-            .fontSize(26)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#111827')
-          Text('今天从一个小目标开始。')
-            .fontSize(14)
-            .fontColor('#6B7280')
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-
-        Button('退出')
-          .height(38)
-          .backgroundColor('#F3F4F6')
-          .fontColor('#374151')
-          .onClick(() => {
-            this.currentUser = null;
-            this.message = '';
-          })
-      }
-      .width('100%')
-
-      Grid() {
-        GridItem() {
-          this.FeatureItem('题库刷题', 'Excel 导入题库，按标签、错题、已刷状态筛选')
-        }
-        GridItem() {
-          this.FeatureItem('文档出题', '上传 PPT / Word 后调用 AI 生成题库或试卷')
-        }
-        GridItem() {
-          this.FeatureItem('学习日记', '记录每日心得，后续接入 AI 状态分析')
-        }
-        GridItem() {
-          this.FeatureItem('AI 辅学', '提问答疑、错题讲解、生成学习计划')
-        }
-      }
-      .columnsTemplate('1fr')
-      .rowsGap(12)
-      .width('100%')
-
-      Row({ space: 10 }) {
-        Button('开始刷题')
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor('#2563EB')
-        Button('导入资料')
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor('#059669')
-      }
-      .width('100%')
-    }
-    .width('100%')
+    .border({ width: 1, color: '#EEF2F7' })
   }
 
   build() {
     Scroll() {
-      Column({ space: 24 }) {
-        if (this.currentUser) {
-          this.HomePanel()
-        } else {
-          this.AuthPanel()
+      Column({ space: 26 }) {
+        Column({ space: 10 }) {
+          Text('AI 辅学')
+            .fontSize(40)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#111827')
+
+          Text('让刷题、资料整理、学习日记和 AI 答疑变得更轻松')
+            .fontSize(15)
+            .fontColor('#6B7280')
+            .textAlign(TextAlign.Center)
+            .lineHeight(23)
         }
+        .width('100%')
+        .margin({ top: 40 })
+
+        Column({ space: 14 }) {
+          this.FeatureCard('📚', '智能题库', '支持题目练习、错题整理、标签分类')
+          this.FeatureCard('📝', '文档出题', '后续可接入 Word / PPT 文档生成试卷')
+          this.FeatureCard('🤖', 'AI 答疑', '围绕知识点解释、错题讲解和学习规划')
+          this.FeatureCard('🌙', '学习日记', '记录学习状态，为后续 AI 分析做准备')
+        }
+        .width('100%')
+
+        Button('立即进入')
+          .width('100%')
+          .height(52)
+          .borderRadius(18)
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .backgroundColor('#2563EB')
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.goLogin();
+          })
+
+        Text('课程项目 · HarmonyOS ArkTS')
+          .fontSize(12)
+          .fontColor('#9CA3AF')
+          .margin({ top: 8 })
       }
       .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.Center)
-      .padding({ left: 20, right: 20, top: 40, bottom: 40 })
+      .padding({ left: 22, right: 22, top: 24, bottom: 36 })
     }
-    .height('100%')
     .width('100%')
-    .backgroundColor('#F3F7FB')
+    .height('100%')
+    .backgroundColor('#F6F8FC')
   }
 }

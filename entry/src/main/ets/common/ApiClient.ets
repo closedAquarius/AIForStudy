@@ -30,7 +30,7 @@ interface RegisterRequest {
   nickname: string;
 }
 
-const API_BASE_URL: string = 'http://100.67.103.81:5000/api';
+const API_BASE_URL: string = 'http://127.0.0.1:5000/api';
 
 function postJson(path: string, body: LoginRequest | RegisterRequest): Promise<ApiResult> {
   return new Promise((resolve: (value: ApiResult) => void, reject: (reason: Error) => void) => {

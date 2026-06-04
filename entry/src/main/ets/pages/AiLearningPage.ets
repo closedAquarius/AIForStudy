@@ -1,0 +1,56 @@
+import { router } from '@kit.ArkUI';
+
+@Entry
+@Component
+struct AiLearningPage {
+  build() {
+    Stack() {
+      Image($r('app.media.main_background'))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+
+      Column({ space: 24 }) {
+        Row() {
+          Text('‹ 返回')
+            .fontSize(18)
+            .fontColor('#2D75FF')
+            .onClick(() => {
+              router.back();
+            })
+
+          Blank()
+        }
+        .width('100%')
+
+        Image($r('app.media.big_icon4'))
+          .width(150)
+          .height(150)
+          .objectFit(ImageFit.Contain)
+
+        Text('AI辅学')
+          .fontSize(30)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Text('提问答疑、错题讲解、生成学习计划。')
+          .fontSize(16)
+          .fontColor('#65718E')
+          .lineHeight(24)
+          .textAlign(TextAlign.Center)
+
+        Text('功能开发中')
+          .fontSize(15)
+          .fontColor('#FFAA45')
+          .padding({ left: 18, right: 18, top: 8, bottom: 8 })
+          .borderRadius(18)
+          .backgroundColor('#FFF1DD')
+      }
+      .width('86%')
+      .padding({ top: 56 })
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+  }
+}

@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -6,11 +7,12 @@ from pathlib import Path
 from flask import Flask, request
 from pymysql.err import IntegrityError
 
-from api_utils import success, fail, public_user
+from api_utils import success, fail, public_user, require_current_user
 from question_bank_api import question_bank_bp
 from werkzeug.utils import secure_filename
 
 from db import db_cursor
+from services.diary_service import DiaryService
 from services.document_text_extractor import DocumentTextExtractor
 from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
@@ -40,6 +42,29 @@ def optional_int(value):
     if value is None or value == "":
         return None
     return int(value)
+
+
+def to_diary_entry(row):
+    raw_tags = row.get("tags")
+    tags = []
+    if raw_tags:
+        if isinstance(raw_tags, str):
+            try:
+                tags = json.loads(raw_tags)
+            except json.JSONDecodeError:
+                tags = []
+        else:
+            tags = raw_tags
+
+    return {
+        "id": row["id"],
+        "entryDate": str(row.get("entry_date") or ""),
+        "moodScore": int(row.get("mood_score") or 0),
+        "title": row.get("title") or "",
+        "content": row.get("content") or "",
+        "tags": tags if isinstance(tags, list) else [],
+        "createdAt": str(row.get("created_at") or ""),
+    }
 
 
 @app.get("/api/health")
@@ -155,6 +180,165 @@ def dashboard_summary():
             {"title": "AI 辅学", "value": "提问、讲解、出卷", "status": "规划中"},
         ]
     })
+
+
+@app.get("/api/diary/list")
+def list_diary_entries():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    entries = DiaryService().list_entries(user["id"])
+    return success(entries)
+
+
+@app.post("/api/diary/create")
+def create_diary_entry():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    entry_date = (body.get("entry_date") or "").strip()
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    tags = body.get("tags") or []
+
+    try:
+        mood_score = int(body.get("mood_score"))
+    except (TypeError, ValueError):
+        return fail("今日学习心情必须是 1-10 的整数")
+
+    if not entry_date:
+        return fail("日期不能为空")
+    try:
+        datetime.strptime(entry_date, "%Y-%m-%d")
+    except ValueError:
+        return fail("日期格式必须为 YYYY-MM-DD")
+
+    if not title:
+        return fail("日记标题不能为空")
+    if not content:
+        return fail("学习日记内容不能为空")
+    if mood_score < 1 or mood_score > 10:
+        return fail("今日学习心情必须在 1-10 分之间")
+    if not isinstance(tags, list):
+        return fail("标签必须是数组")
+
+    normalized_tags = [str(tag).strip() for tag in tags if str(tag).strip()]
+
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO diary_entries
+              (user_id, entry_date, mood_score, title, content, tags)
+            VALUES
+              (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              mood_score = VALUES(mood_score),
+              title = VALUES(title),
+              content = VALUES(content),
+              tags = VALUES(tags),
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                user["id"],
+                entry_date,
+                mood_score,
+                title,
+                content,
+                json.dumps(normalized_tags, ensure_ascii=False),
+            ),
+        )
+        cursor.execute(
+            """
+            SELECT id, entry_date, mood_score, title, content, tags, created_at
+            FROM diary_entries
+            WHERE user_id = %s AND entry_date = %s
+            LIMIT 1
+            """,
+            (user["id"], entry_date),
+        )
+        row = cursor.fetchone()
+
+    return success(to_diary_entry(row), "学习日记保存成功", 201)
+
+
+@app.put("/api/diary/update/<int:entry_id>")
+def update_diary_entry(entry_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    entry_date = (body.get("entry_date") or "").strip()
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    tags = body.get("tags") or []
+
+    try:
+        mood_score = int(body.get("mood_score"))
+    except (TypeError, ValueError):
+        return fail("今日学习心情必须是 1-10 的整数")
+
+    if not entry_date:
+        return fail("日期不能为空")
+    try:
+        datetime.strptime(entry_date, "%Y-%m-%d")
+    except ValueError:
+        return fail("日期格式必须为 YYYY-MM-DD")
+
+    if not title:
+        return fail("日记标题不能为空")
+    if not content:
+        return fail("学习日记内容不能为空")
+    if mood_score < 1 or mood_score > 10:
+        return fail("今日学习心情必须在 1-10 分之间")
+    if not isinstance(tags, list):
+        return fail("标签必须是数组")
+
+    result = DiaryService().update_entry(
+        entry_id, user["id"], entry_date, mood_score, title, content, tags
+    )
+    if result is None:
+        return fail("日记不存在或无权修改", 404)
+    return success(result, "学习日记更新成功")
+
+
+@app.delete("/api/diary/delete/<int:entry_id>")
+def delete_diary_entry(entry_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    deleted = DiaryService().delete_entry(entry_id, user["id"])
+    if not deleted:
+        return fail("日记不存在或无权删除", 404)
+    return success(None, "学习日记已删除")
+
+
+@app.post("/api/diary/polish")
+def polish_diary_content():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    content = (body.get("content") or "").strip()
+
+    if not content:
+        return fail("日记内容不能为空")
+
+    try:
+        polished = DiaryService().polish_content(content)
+    except ValueError as exc:
+        return fail(str(exc))
+    except RuntimeError as exc:
+        return fail(str(exc), 500)
+    except Exception as exc:
+        return fail(f"AI润色失败：{exc}", 500)
+
+    return success({"result": polished}, "润色完成")
 
 
 @app.post("/api/ai/generate-questions")

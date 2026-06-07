@@ -112,6 +112,14 @@ interface GenerateQuestionsRequest {
   owner_user_id: number;
 }
 
+interface StudyDiarySaveRequest {
+  entry_date: string;
+  mood_score: number;
+  title: string;
+  content: string;
+  tags: string[];
+}
+
 interface HttpHeader {
   'Content-Type': string;
 }
@@ -127,11 +135,10 @@ function createHttpHeader(contentType: string): HttpHeader {
   };
 }
 
-type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest;
+type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-// const API_BASE_URL: string = 'http://192.168.253.1:5000/api';
-const API_BASE_URL: string = 'http://127.0.0.1:5000/api';
+const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
@@ -368,6 +375,20 @@ export interface QuestionBankResponse {
 export interface EmptyResponseData {
 }
 
+export interface StudyDiarySaveData {
+  id: number;
+  entryDate: string;
+  moodScore: number;
+  title: string;
+  content: string;
+  tags: string[];
+  createdAt: string;
+}
+
+export interface DiaryPolishData {
+  result: string;
+}
+
 export interface QuestionBankStats {
   totalQuestions: number;
   practicedQuestions: number;
@@ -526,146 +547,97 @@ export function getQuestionBankDetail(
   );
 }
 
-export interface QuestionOptionItem {
-  optionKey: string;
-  content: string;
-  isCorrect: number;
-}
-
-export interface QuestionListItem {
-  id: number;
-  seq: number;
-  type: string;
-  typeLabel: string;
-  stem: string;
-  analysis: string;
-  difficulty: number;
-  score: number;
-  knowledgePoint: string;
-  practiceStatus: string;
-  latestIsCorrect: number;
-  answerText: string;
-  options: QuestionOptionItem[];
-  tags: string[];
-}
-
-export interface QuestionFilterOptions {
-  types: QuestionTypeOption[];
-  difficulties: number[];
-  knowledgePoints: string[];
-}
-
-export interface QuestionTypeOption {
-  value: string;
-  label: string;
-}
-
-export interface PaginationInfo {
-  page: number;
-  pageSize: number;
-  total: number;
-  pageCount: number;
-}
-
-export interface QuestionListData {
-  bank: QuestionBankSummary;
-  questions: QuestionListItem[];
-  filters: QuestionFilterOptions;
-  pagination: PaginationInfo;
-}
-
-export interface QuestionListQuery {
-  bankId: number;
-  page: number;
-  pageSize: number;
-  keyword: string;
-  type: string;
-  difficulty: number;
-  knowledgePoint: string;
-  practiceStatus: string;
-  wrongOnly: boolean;
-}
-
-function appendQuery(path: string, key: string, value: string): string {
-  if (value.length === 0) {
-    return path;
-  }
-
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}${key}=${encodeURIComponent(value)}`;
-}
-
-export function getQuestionList(
+export function saveStudyDiary(
   token: string,
-  query: QuestionListQuery
-): Promise<CommonResult<QuestionListData>> {
-  let path = `/question-banks/${query.bankId}/questions`;
+  entryDate: string,
+  moodScore: number,
+  title: string,
+  content: string,
+  tags: string[]
+): Promise<CommonResult<StudyDiarySaveData>> {
+  const body: StudyDiarySaveRequest = {
+    entry_date: entryDate,
+    mood_score: moodScore,
+    title: title,
+    content: content,
+    tags: tags
+  };
 
-  path = appendQuery(path, 'page', query.page.toString());
-  path = appendQuery(path, 'pageSize', query.pageSize.toString());
-  path = appendQuery(path, 'keyword', query.keyword);
-  path = appendQuery(path, 'type', query.type);
+  return requestJson<StudyDiarySaveData>(
+    http.RequestMethod.POST,
+    '/diary/create',
+    token,
+    JSON.stringify(body)
+  );
+}
 
-  if (query.difficulty > 0) {
-    path = appendQuery(path, 'difficulty', query.difficulty.toString());
-  }
+export function updateStudyDiary(
+  token: string,
+  diaryId: number,
+  entryDate: string,
+  moodScore: number,
+  title: string,
+  content: string,
+  tags: string[]
+): Promise<CommonResult<StudyDiarySaveData>> {
+  const body: StudyDiarySaveRequest = {
+    entry_date: entryDate,
+    mood_score: moodScore,
+    title: title,
+    content: content,
+    tags: tags
+  };
 
-  path = appendQuery(path, 'knowledgePoint', query.knowledgePoint);
-  path = appendQuery(path, 'practiceStatus', query.practiceStatus);
-  path = appendQuery(path, 'wrongOnly', query.wrongOnly ? '1' : '0');
+  return requestJson<StudyDiarySaveData>(
+    http.RequestMethod.PUT,
+    `/diary/update/${diaryId}`,
+    token,
+    JSON.stringify(body)
+  );
+}
 
-  return requestJson<QuestionListData>(
-    http.RequestMethod.GET,
-    path,
+export function deleteStudyDiary(
+  token: string,
+  diaryId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/diary/delete/${diaryId}`,
     token
   );
 }
 
-export interface QuestionImportResult {
-  importId: number;
-  totalRows: number;
-  successRows: number;
-  failedRows: number;
-  errorMessage: string;
+interface DiaryPolishRequest {
+  content: string;
 }
 
-interface UploadExcelHeader {
-  'Content-Type': string;
-  Authorization: string;
-}
-
-export function importQuestionsFromExcel(
+export function polishDiary(
   token: string,
-  bankId: number,
-  filePath: string,
-  fileName: string
-): Promise<CommonResult<QuestionImportResult>> {
-  return new Promise((resolve: (value: CommonResult<QuestionImportResult>) => void, reject: (reason: Error) => void) => {
-    const request = http.createHttp();
+  content: string
+): Promise<CommonResult<DiaryPolishData>> {
+  const body: DiaryPolishRequest = {
+    content: content
+  };
 
-    const header: UploadExcelHeader = {
-      'Content-Type': 'multipart/form-data',
+  return new Promise((resolve: (value: CommonResult<DiaryPolishData>) => void, reject: (reason: Error) => void) => {
+    const httpRequest = http.createHttp();
+
+    const header: RequestHeader = {
+      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     };
 
-    const filePart: http.MultiFormData = {
-      name: 'file',
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      filePath: filePath,
-      remoteFileName: fileName
-    };
-
-    request.request(
-      `${API_BASE_URL}/question-banks/${bankId}/import-excel`,
+    httpRequest.request(
+      `${API_BASE_URL}/diary/polish`,
       {
         method: http.RequestMethod.POST,
         header: header,
-        multiFormDataList: [filePart],
-        connectTimeout: 15000,
+        extraData: JSON.stringify(body),
+        connectTimeout: 10000,
         readTimeout: 60000
       },
       (error, response) => {
-        request.destroy();
+        httpRequest.destroy();
 
         if (error) {
           reject(new Error(error.message));
@@ -674,7 +646,7 @@ export function importQuestionsFromExcel(
 
         try {
           const raw = response.result as string;
-          const result = JSON.parse(raw) as CommonResult<QuestionImportResult>;
+          const result = JSON.parse(raw) as CommonResult<DiaryPolishData>;
           resolve(result);
         } catch (parseError) {
           reject(new Error('后端响应解析失败'));

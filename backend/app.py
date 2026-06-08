@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from werkzeug.utils import secure_filename
 
 from db import db_cursor
 from services.diary_service import DiaryService
+from services.ai_learning_service import AiLearningService, AiProviderBusyError
 from services.document_text_extractor import DocumentTextExtractor
 from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
@@ -339,6 +341,130 @@ def polish_diary_content():
         return fail(f"AI润色失败：{exc}", 500)
 
     return success({"result": polished}, "润色完成")
+
+
+@app.get("/api/ai-learning/conversations")
+def ai_learning_conversations():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    limit = optional_int(request.args.get("limit") or 20)
+    conversations = AiLearningService().list_conversations(user["id"], max(1, min(limit or 20, 50)))
+    return success({"conversations": conversations}, "会话列表获取成功")
+
+
+@app.get("/api/ai-learning/conversations/<int:conversation_id>/messages")
+def ai_learning_conversation_messages(conversation_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    limit = optional_int(request.args.get("limit") or 40)
+    messages = AiLearningService().list_messages(user["id"], conversation_id, max(1, min(limit or 40, 100)))
+    return success({"messages": messages}, "会话消息获取成功")
+
+
+@app.get("/api/ai-learning/wrong-questions")
+def ai_learning_wrong_questions():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    bank_id = optional_int(request.args.get("bank_id"))
+    limit = optional_int(request.args.get("limit") or 30)
+    questions = AiLearningService().list_wrong_questions(user["id"], bank_id, max(1, min(limit or 30, 100)))
+    return success({"questions": questions}, "错题获取成功")
+
+
+@app.post("/api/ai-learning/chat")
+def ai_learning_chat():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    scene = (request.form.get("scene") or "qa").strip()
+    message = (request.form.get("message") or "").strip()
+    conversation_id = optional_int(request.form.get("conversation_id"))
+    related_question_id = optional_int(request.form.get("related_question_id"))
+
+    attachment_path = None
+    attachment_name = None
+    attachment_type = None
+    upload_file = request.files.get("file")
+    if upload_file and upload_file.filename:
+        attachment_name = upload_file.filename
+        suffix = Path(secure_filename(upload_file.filename)).suffix or ".bin"
+        temp_name = f"ai-learning-{uuid.uuid4().hex}{suffix}"
+        attachment_path = str(Path(tempfile.gettempdir()) / temp_name)
+        upload_file.save(attachment_path)
+        attachment_type = (request.form.get("attachment_type") or "").strip() or suffix.lstrip(".")
+
+    try:
+        result = AiLearningService().chat(
+            user_id=user["id"],
+            message=message,
+            scene=scene,
+            conversation_id=conversation_id,
+            related_question_id=related_question_id,
+            attachment_path=attachment_path,
+            attachment_name=attachment_name,
+            attachment_type=attachment_type,
+        )
+        return success(result, "AI 回复成功")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except AiProviderBusyError as exc:
+        return fail(str(exc), 429)
+    except RuntimeError as exc:
+        return fail(str(exc), 500)
+    except Exception as exc:
+        app.logger.exception("ai learning chat failed")
+        return fail(f"AI 回复失败: {exc}", 500)
+
+
+@app.post("/api/ai-learning/explain-question")
+def ai_learning_explain_question():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    question_id = optional_int(body.get("question_id"))
+    if not question_id:
+        return fail("question_id 不能为空")
+
+    try:
+        result = AiLearningService().explain_wrong_question(user["id"], question_id)
+        return success(result, "错题讲解成功")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except Exception as exc:
+        if isinstance(exc, AiProviderBusyError):
+            return fail(str(exc), 429)
+        app.logger.exception("ai learning explain question failed")
+        return fail(f"错题讲解失败: {exc}", 500)
+
+
+@app.post("/api/ai-learning/diary-plan")
+def ai_learning_diary_plan():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    days = optional_int(body.get("days") or 3) or 3
+
+    try:
+        result = AiLearningService().build_study_plan(user["id"], max(1, min(days, 14)))
+        return success(result, "学习建议生成成功")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except Exception as exc:
+        if isinstance(exc, AiProviderBusyError):
+            return fail(str(exc), 429)
+        app.logger.exception("ai learning diary plan failed")
+        return fail(f"学习建议生成失败: {exc}", 500)
 
 
 @app.post("/api/ai/generate-questions")

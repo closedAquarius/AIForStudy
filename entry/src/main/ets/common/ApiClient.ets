@@ -813,3 +813,122 @@ export function importQuestionsFromExcel(
     );
   });
 }
+
+// 追加到 ets/common/ApiClient.ets 的末尾即可。
+// 依赖本文件已有的 CommonResult<T>、QuestionOptionItem、requestJson<T>()。
+
+export interface PracticeQuestionItem {
+  id: number;
+  seq: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  practiceStatusLabel: string;
+  options: QuestionOptionItem[];
+}
+
+export interface PracticeStartData {
+  sessionId: number;
+  bankId: number;
+  mode: string;
+  requestedCount: number;
+  actualCount: number;
+  questions: PracticeQuestionItem[];
+}
+
+export interface PracticeSessionData {
+  sessionId: number;
+  bankId: number;
+  bankName: string;
+  mode: string;
+  totalCount: number;
+  startedAt: string;
+  finishedAt: string;
+  questions: PracticeQuestionItem[];
+}
+
+export interface PracticeAnswerSubmitItem {
+  question_id: number;
+  user_answer: string;
+  used_seconds: number;
+}
+
+export interface PracticeAnswerResultItem {
+  questionId: number;
+  userAnswer: string;
+  isCorrect: number;
+  correctAnswer: string;
+  analysis: string;
+}
+
+export interface PracticeSubmitData {
+  sessionId: number;
+  totalCount: number;
+  correctCount: number;
+  wrongCount: number;
+  accuracyRate: number;
+  answers: PracticeAnswerResultItem[];
+}
+
+interface PracticeStartRequest {
+  bank_id: number;
+  count: number;
+  mode: string;
+}
+
+interface PracticeSubmitRequest {
+  answers: PracticeAnswerSubmitItem[];
+}
+
+export function startPracticeSession(
+  token: string,
+  bankId: number,
+  count: number,
+  mode: string
+): Promise<CommonResult<PracticeStartData>> {
+  const body: PracticeStartRequest = {
+    bank_id: bankId,
+    count: count,
+    mode: mode
+  };
+
+  return requestJson<PracticeStartData>(
+    http.RequestMethod.POST,
+    '/practice/start',
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function getPracticeSession(
+  token: string,
+  sessionId: number
+): Promise<CommonResult<PracticeSessionData>> {
+  return requestJson<PracticeSessionData>(
+    http.RequestMethod.GET,
+    `/practice-sessions/${sessionId}`,
+    token
+  );
+}
+
+export function submitPracticeSession(
+  token: string,
+  sessionId: number,
+  answers: PracticeAnswerSubmitItem[]
+): Promise<CommonResult<PracticeSubmitData>> {
+  const body: PracticeSubmitRequest = {
+    answers: answers
+  };
+
+  return requestJson<PracticeSubmitData>(
+    http.RequestMethod.POST,
+    `/practice-sessions/${sessionId}/submit`,
+    token,
+    JSON.stringify(body)
+  );
+}

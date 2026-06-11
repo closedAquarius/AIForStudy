@@ -4,7 +4,8 @@ import {
   ChartItem,
   QuestionBankDetail,
   RecentQuestion,
-  getQuestionBankDetail
+  getQuestionBankDetail,
+  startPracticeSession
 } from '../common/ApiClient';
 
 @Entry
@@ -14,6 +15,11 @@ struct QuestionBankDetailPage {
   @State loading: boolean = false;
   @State message: string = '';
   @State detail: QuestionBankDetail | null = null;
+
+  @State showStartDialog: boolean = false;
+  @State selectedPracticeCount: number = 10;
+  @State selectedPracticeMode: string = 'new_first';
+  @State startingPractice: boolean = false;
 
   aboutToAppear(): void {
     const params = router.getParams() as Record<string, string>;
@@ -25,6 +31,51 @@ struct QuestionBankDetailPage {
 
   private getToken(): string {
     return AppStorage.Get<string>('token') ?? '';
+  }
+
+
+  private practiceModeLabel(): string {
+    return this.selectedPracticeMode === 'wrong_first' ? '错题优先' : '新题优先';
+  }
+
+  private async enterPractice(): Promise<void> {
+    if (this.startingPractice) {
+      return;
+    }
+    if (this.bankId <= 0) {
+      this.message = '题库参数错误';
+      return;
+    }
+
+    this.startingPractice = true;
+    this.message = '正在创建刷题会话...';
+
+    try {
+      const result = await startPracticeSession(
+        this.getToken(),
+        this.bankId,
+        this.selectedPracticeCount,
+        this.selectedPracticeMode
+      );
+
+      if (result.success && result.data) {
+        this.showStartDialog = false;
+        this.message = '';
+        router.pushUrl({
+          url: 'pages/PracticeExamPage',
+          params: {
+            sessionId: result.data.sessionId.toString()
+          }
+        });
+        return;
+      }
+
+      this.message = result.message || '刷题会话创建失败';
+    } catch (error) {
+      this.message = `刷题会话创建失败：${(error as Error).message}`;
+    } finally {
+      this.startingPractice = false;
+    }
   }
 
   private async loadDetail(): Promise<void> {
@@ -111,7 +162,7 @@ struct QuestionBankDetailPage {
           .backgroundColor('#2D75FF')
           .fontColor('#FFFFFF')
           .onClick(() => {
-            this.message = '开始刷题页面将在下一步开发';
+            this.showStartDialog = true;
           })
       }
       .width(150)
@@ -340,47 +391,210 @@ struct QuestionBankDetailPage {
     }
   }
 
-  build() {
-    Column() {
-      this.HeaderBar()
 
-      if (this.message.length > 0) {
-        Text(this.message)
-          .fontSize(13)
-          .fontColor(this.message.includes('失败') || this.message.includes('错误') ? '#EF4444' : '#2D75FF')
-          .width('100%')
-          .padding({ left: 20, right: 20, top: 8 })
-      }
 
-      if (this.loading) {
-        Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-
-          Text('正在加载题库详情...')
-            .fontSize(14)
-            .fontColor('#64748B')
-            .margin({ top: 10 })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else {
-        Scroll() {
-          this.DetailContent()
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-      }
-
-      FeatureBottomNav({
-        selectedIndex: 1
+  @Builder
+  CountChip(count: number) {
+    Text(count.toString())
+      .width(54)
+      .height(36)
+      .fontSize(14)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.selectedPracticeCount === count ? '#FFFFFF' : '#2D75FF')
+      .textAlign(TextAlign.Center)
+      .borderRadius(18)
+      .backgroundColor(this.selectedPracticeCount === count ? '#2D75FF' : '#EAF3FF')
+      .onClick(() => {
+        this.selectedPracticeCount = count;
       })
+  }
+
+  @Builder
+  ModeChip(mode: string, title: string, desc: string) {
+    Column({ space: 5 }) {
+      Row() {
+        Text(title)
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.selectedPracticeMode === mode ? '#2D75FF' : '#0B1B44')
+          .layoutWeight(1)
+
+        Circle()
+          .width(16)
+          .height(16)
+          .fill(this.selectedPracticeMode === mode ? '#2D75FF' : '#D5DEEA')
+      }
+      .width('100%')
+
+      Text(desc)
+        .width('100%')
+        .fontSize(12)
+        .fontColor('#64748B')
+        .lineHeight(18)
+    }
+    .layoutWeight(1)
+    .height(86)
+    .padding(13)
+    .borderRadius(18)
+    .backgroundColor(this.selectedPracticeMode === mode ? '#F0F6FF' : '#F8FBFF')
+    .border({ width: 1, color: this.selectedPracticeMode === mode ? '#9EC5FF' : '#EEF2F7' })
+    .onClick(() => {
+      this.selectedPracticeMode = mode;
+    })
+  }
+
+  @Builder
+  StartPracticeDialog() {
+    Column({ space: 18 }) {
+      Row() {
+        Column({ space: 4 }) {
+          Text('开始刷题')
+            .fontSize(23)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#0B1B44')
+
+          Text('按你的练习目标智能抽题')
+            .fontSize(13)
+            .fontColor('#64748B')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Text('×')
+          .width(32)
+          .height(32)
+          .fontSize(22)
+          .fontColor('#64748B')
+          .textAlign(TextAlign.Center)
+          .borderRadius(16)
+          .backgroundColor('#F1F5F9')
+          .onClick(() => {
+            this.showStartDialog = false;
+          })
+      }
+      .width('100%')
+
+      Column({ space: 10 }) {
+        Text('选择刷题数量')
+          .width('100%')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Row({ space: 10 }) {
+          this.CountChip(5)
+          this.CountChip(10)
+          this.CountChip(20)
+          this.CountChip(50)
+        }
+        .width('100%')
+      }
+      .width('100%')
+
+      Column({ space: 10 }) {
+        Text('选择刷题模式')
+          .width('100%')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Row({ space: 10 }) {
+          this.ModeChip('new_first', '新题优先', '60% 未刷题，兼顾已刷正确题和错题')
+          this.ModeChip('wrong_first', '错题优先', '60% 错题，帮助集中复盘薄弱点')
+        }
+        .width('100%')
+      }
+      .width('100%')
+
+      Text(`当前方案：${this.selectedPracticeCount} 题 · ${this.practiceModeLabel()}`)
+        .width('100%')
+        .fontSize(13)
+        .fontColor('#2D75FF')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .borderRadius(14)
+        .backgroundColor('#EAF3FF')
+
+      Button(this.startingPractice ? '进入中...' : '进入刷题')
+        .width('100%')
+        .height(48)
+        .borderRadius(18)
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .backgroundColor('#2D75FF')
+        .enabled(!this.startingPractice)
+        .onClick(() => {
+          this.enterPractice();
+        })
+    }
+    .width('86%')
+    .padding(22)
+    .borderRadius(28)
+    .backgroundColor('#FFFFFFFF')
+    .shadow({
+      radius: 28,
+      color: '#33000000',
+      offsetX: 0,
+      offsetY: 10
+    })
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        this.HeaderBar()
+
+        if (this.message.length > 0) {
+          Text(this.message)
+            .fontSize(13)
+            .fontColor(this.message.includes('失败') || this.message.includes('错误') ? '#EF4444' : '#2D75FF')
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 8 })
+        }
+
+        if (this.loading) {
+          Column() {
+            LoadingProgress()
+              .width(40)
+              .height(40)
+
+            Text('正在加载题库详情...')
+              .fontSize(14)
+              .fontColor('#64748B')
+              .margin({ top: 10 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+        } else {
+          Scroll() {
+            this.DetailContent()
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Off)
+        }
+
+        FeatureBottomNav({
+          selectedIndex: 1
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#F6F8FC')
+
+      if (this.showStartDialog) {
+        Column() {
+          this.StartPracticeDialog()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor('#66000000')
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F6F8FC')
   }
 }

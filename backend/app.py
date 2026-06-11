@@ -18,10 +18,13 @@ from services.ai_learning_service import AiLearningService, AiProviderBusyError
 from services.document_text_extractor import DocumentTextExtractor
 from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
+from practice_api import practice_bp
+
 
 
 app = Flask(__name__)
 app.register_blueprint(question_bank_bp, url_prefix="/api")
+app.register_blueprint(practice_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)

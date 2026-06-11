@@ -138,7 +138,7 @@ function createHttpHeader(contentType: string): HttpHeader {
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
+const API_BASE_URL: string = 'http://10.0.2.2:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
@@ -647,6 +647,164 @@ export function polishDiary(
         try {
           const raw = response.result as string;
           const result = JSON.parse(raw) as CommonResult<DiaryPolishData>;
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+export interface QuestionOptionItem {
+  optionKey: string;
+  content: string;
+  isCorrect: number;
+}
+
+export interface QuestionListItem {
+  id: number;
+  seq: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  latestIsCorrect: number;
+  answerText: string;
+  options: QuestionOptionItem[];
+  tags: string[];
+}
+
+export interface QuestionFilterOptions {
+  types: QuestionTypeOption[];
+  difficulties: number[];
+  knowledgePoints: string[];
+}
+
+export interface QuestionTypeOption {
+  value: string;
+  label: string;
+}
+
+export interface PaginationInfo {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}
+
+export interface QuestionListData {
+  bank: QuestionBankSummary;
+  questions: QuestionListItem[];
+  filters: QuestionFilterOptions;
+  pagination: PaginationInfo;
+}
+
+export interface QuestionListQuery {
+  bankId: number;
+  page: number;
+  pageSize: number;
+  keyword: string;
+  type: string;
+  difficulty: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  wrongOnly: boolean;
+}
+
+function appendQuery(path: string, key: string, value: string): string {
+  if (value.length === 0) {
+    return path;
+  }
+
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}${key}=${encodeURIComponent(value)}`;
+}
+
+export function getQuestionList(
+  token: string,
+  query: QuestionListQuery
+): Promise<CommonResult<QuestionListData>> {
+  let path = `/question-banks/${query.bankId}/questions`;
+
+  path = appendQuery(path, 'page', query.page.toString());
+  path = appendQuery(path, 'pageSize', query.pageSize.toString());
+  path = appendQuery(path, 'keyword', query.keyword);
+  path = appendQuery(path, 'type', query.type);
+
+  if (query.difficulty > 0) {
+    path = appendQuery(path, 'difficulty', query.difficulty.toString());
+  }
+
+  path = appendQuery(path, 'knowledgePoint', query.knowledgePoint);
+  path = appendQuery(path, 'practiceStatus', query.practiceStatus);
+  path = appendQuery(path, 'wrongOnly', query.wrongOnly ? '1' : '0');
+
+  return requestJson<QuestionListData>(
+    http.RequestMethod.GET,
+    path,
+    token
+  );
+}
+
+export interface QuestionImportResult {
+  importId: number;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  errorMessage: string;
+}
+
+interface UploadExcelHeader {
+  'Content-Type': string;
+  Authorization: string;
+}
+
+export function importQuestionsFromExcel(
+  token: string,
+  bankId: number,
+  filePath: string,
+  fileName: string
+): Promise<CommonResult<QuestionImportResult>> {
+  return new Promise((resolve: (value: CommonResult<QuestionImportResult>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+
+    const header: UploadExcelHeader = {
+      'Content-Type': 'multipart/form-data',
+      Authorization: `Bearer ${token}`
+    };
+
+    const filePart: http.MultiFormData = {
+      name: 'file',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filePath: filePath,
+      remoteFileName: fileName
+    };
+
+    request.request(
+      `${API_BASE_URL}/question-banks/${bankId}/import-excel`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        multiFormDataList: [filePart],
+        connectTimeout: 15000,
+        readTimeout: 60000
+      },
+      (error, response) => {
+        request.destroy();
+
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+
+        try {
+          const raw = response.result as string;
+          const result = JSON.parse(raw) as CommonResult<QuestionImportResult>;
           resolve(result);
         } catch (parseError) {
           reject(new Error('后端响应解析失败'));

@@ -22,11 +22,24 @@ struct QuestionBankDetailPage {
   @State startingPractice: boolean = false;
 
   aboutToAppear(): void {
-    const params = router.getParams() as Record<string, string>;
-    if (params) {
-      this.bankId = Number(params['bankId'] ?? '0');
-    }
+    this.readParams();
+  }
+
+  onPageShow(): void {
+    this.readParams();
     this.loadDetail();
+  }
+
+  private readParams(): void {
+    const params = router.getParams() as Record<string, string>;
+    if (!params) {
+      return;
+    }
+
+    const bankId = Number(params['bankId'] ?? this.bankId.toString());
+    if (bankId > 0) {
+      this.bankId = bankId;
+    }
   }
 
   private getToken(): string {

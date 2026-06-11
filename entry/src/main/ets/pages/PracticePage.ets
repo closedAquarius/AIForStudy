@@ -29,6 +29,9 @@ struct PracticePage {
   @State deletingBankName: string = '';
 
   aboutToAppear(): void {
+  }
+
+  onPageShow(): void {
     this.loadBanks();
   }
 

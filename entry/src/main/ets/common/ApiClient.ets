@@ -138,7 +138,7 @@ function createHttpHeader(contentType: string): HttpHeader {
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
+const API_BASE_URL: string = 'http://192.168.144.1:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
@@ -275,8 +275,8 @@ export function generateQuestionsFromFile(
 function buildMultipartBody(
   boundary: string,
   fields: MultipartField[],
-  filePath: string,
-  fileName: string
+  filePath: string = '',
+  fileName: string = ''
 ): ArrayBuffer {
   let prefix = '';
   fields.forEach((field: MultipartField) => {
@@ -284,15 +284,20 @@ function buildMultipartBody(
     prefix += `Content-Disposition: form-data; name="${field.name}"\r\n\r\n`;
     prefix += `${field.value}\r\n`;
   });
-  prefix += `--${boundary}\r\n`;
-  prefix += `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`;
-  prefix += `Content-Type: ${mimeTypeOf(fileName)}\r\n\r\n`;
+  if (filePath.length > 0) {
+    prefix += `--${boundary}\r\n`;
+    prefix += `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`;
+    prefix += `Content-Type: ${mimeTypeOf(fileName)}\r\n\r\n`;
+  }
 
   const suffix = `\r\n--${boundary}--\r\n`;
   const prefixBytes = encodeUtf8(prefix);
-  const fileBytes = readFileBytes(filePath);
   const suffixBytes = encodeUtf8(suffix);
-  return concatBytes([prefixBytes, fileBytes, suffixBytes]);
+  if (filePath.length > 0) {
+    const fileBytes = readFileBytes(filePath);
+    return concatBytes([prefixBytes, fileBytes, suffixBytes]);
+  }
+  return concatBytes([prefixBytes, suffixBytes]);
 }
 
 function readFileBytes(filePath: string): Uint8Array {
@@ -425,6 +430,156 @@ export interface QuestionBankDetail {
   recentQuestions: RecentQuestion[];
 }
 
+export interface QuestionTypeOption {
+  value: string;
+  label: string;
+}
+
+export interface QuestionOptionItem {
+  optionKey: string;
+  content: string;
+  isCorrect: number;
+}
+
+export interface QuestionListItem {
+  id: number;
+  seq: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  latestIsCorrect: number;
+  answerText: string;
+  options: QuestionOptionItem[];
+  tags: string[];
+}
+
+export interface QuestionListFilters {
+  types: QuestionTypeOption[];
+  difficulties: number[];
+  knowledgePoints: string[];
+}
+
+export interface QuestionListPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}
+
+export interface QuestionListData {
+  bank: QuestionBankSummary;
+  questions: QuestionListItem[];
+  filters: QuestionListFilters;
+  pagination: QuestionListPagination;
+}
+
+export interface QuestionListQuery {
+  bankId: number;
+  page: number;
+  pageSize: number;
+  keyword: string;
+  type: string;
+  difficulty: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  wrongOnly: boolean;
+}
+
+export interface QuestionImportResult {
+  importId: number;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  errorMessage: string;
+}
+
+export interface AiConversationSummary {
+  id: number;
+  title: string;
+  scene: string;
+  updatedAt: string;
+  lastMessage: string;
+}
+
+export interface AiWrongQuestionItem {
+  id: number;
+  bankId: number;
+  bankName: string;
+  type: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  tags: string[];
+  latestIsCorrect: number;
+  latestAnsweredAt: string;
+}
+
+export interface AiChatAttachment {
+  document_id: number;
+  file_name: string;
+  file_type: string;
+  parse_status: string;
+  text_length: number;
+  summary: string;
+}
+
+export interface AiLearningChatData {
+  conversation_id: number;
+  conversation_title: string;
+  scene: string;
+  assistant_message: string;
+  attachment?: AiChatAttachment;
+  question_context?: string;
+  diary_context?: string;
+}
+
+export interface StudyDiaryHistoryItem {
+  id: number;
+  entryDate: string;
+  title: string;
+  moodScore: number;
+  tags: string[];
+  content: string;
+}
+
+export interface AiDiaryPlanData {
+  days: number;
+  recent_diaries: StudyDiaryHistoryItem[];
+  plan: string;
+}
+
+export interface AiChatMessageItem {
+  id: number;
+  role: string;
+  content: string;
+  relatedQuestionId?: number | null;
+  createdAt: string;
+}
+
+export interface AiConversationsData {
+  conversations: AiConversationSummary[];
+}
+
+export interface AiConversationMessagesData {
+  messages: AiChatMessageItem[];
+}
+
+export interface AiWrongQuestionsData {
+  questions: AiWrongQuestionItem[];
+}
+
+export interface AiQuestionExplanationData {
+  question: AiWrongQuestionItem;
+  explanation: string;
+}
+
 interface CreateQuestionBankRequest {
   name: string;
   description: string;
@@ -432,6 +587,14 @@ interface CreateQuestionBankRequest {
 
 interface UpdateQuestionBankRequest {
   name: string;
+}
+
+interface ExplainQuestionRequest {
+  question_id: number;
+}
+
+interface StudyPlanRequest {
+  days: number;
 }
 
 interface RequestHeader {
@@ -544,6 +707,211 @@ export function getQuestionBankDetail(
     http.RequestMethod.GET,
     `/question-banks/${bankId}`,
     token
+  );
+}
+
+export function getQuestionList(
+  token: string,
+  query: QuestionListQuery
+): Promise<CommonResult<QuestionListData>> {
+  const params = [
+    `page=${query.page}`,
+    `pageSize=${query.pageSize}`,
+    `keyword=${encodeURIComponent(query.keyword)}`,
+    `type=${encodeURIComponent(query.type)}`,
+    `difficulty=${query.difficulty}`,
+    `knowledgePoint=${encodeURIComponent(query.knowledgePoint)}`,
+    `practiceStatus=${encodeURIComponent(query.practiceStatus)}`,
+    `wrongOnly=${query.wrongOnly ? 'true' : 'false'}`
+  ];
+
+  return requestJson<QuestionListData>(
+    http.RequestMethod.GET,
+    `/question-banks/${query.bankId}/questions?${params.join('&')}`,
+    token
+  );
+}
+
+export function importQuestionsFromExcel(
+  token: string,
+  bankId: number,
+  filePath: string,
+  fileName: string
+): Promise<CommonResult<QuestionImportResult>> {
+  return new Promise((resolve: (value: CommonResult<QuestionImportResult>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const boundary = `AIForStudyExcelBoundary${new Date().getTime()}`;
+    const fields: MultipartField[] = [];
+
+    let body: ArrayBuffer;
+    try {
+      body = buildMultipartBody(boundary, fields, filePath, fileName);
+    } catch (error) {
+      request.destroy();
+      reject(new Error(`读取 Excel 文件失败：${(error as Error).message}`));
+      return;
+    }
+
+    const header: RequestHeader = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      Authorization: `Bearer ${token}`
+    };
+
+    request.request(
+      `${API_BASE_URL}/question-banks/${bankId}/import-excel`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: body,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 10000,
+        readTimeout: 120000
+      },
+      (error, response) => {
+        request.destroy();
+
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+
+        try {
+          const raw = response.result as string;
+          resolve(JSON.parse(raw) as CommonResult<QuestionImportResult>);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+export function getAiLearningConversations(
+  token: string,
+  limit: number = 20
+): Promise<CommonResult<AiConversationsData>> {
+  return requestJson<AiConversationsData>(
+    http.RequestMethod.GET,
+    `/ai-learning/conversations?limit=${limit}`,
+    token
+  );
+}
+
+export function getAiConversationMessages(
+  token: string,
+  conversationId: number,
+  limit: number = 40
+): Promise<CommonResult<AiConversationMessagesData>> {
+  return requestJson<AiConversationMessagesData>(
+    http.RequestMethod.GET,
+    `/ai-learning/conversations/${conversationId}/messages?limit=${limit}`,
+    token
+  );
+}
+
+export function getWrongQuestions(
+  token: string,
+  bankId: number = 0,
+  limit: number = 30
+): Promise<CommonResult<AiWrongQuestionsData>> {
+  const bankParam = bankId > 0 ? `&bank_id=${bankId}` : '';
+  return requestJson<AiWrongQuestionsData>(
+    http.RequestMethod.GET,
+    `/ai-learning/wrong-questions?limit=${limit}${bankParam}`,
+    token
+  );
+}
+
+export function chatAiLearning(
+  token: string,
+  message: string,
+  scene: string,
+  conversationId: number = 0,
+  relatedQuestionId: number = 0,
+  attachmentPath: string = '',
+  attachmentName: string = '',
+  attachmentType: string = ''
+): Promise<CommonResult<AiLearningChatData>> {
+  return new Promise((resolve: (value: CommonResult<AiLearningChatData>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const boundary = `AIForStudyChatBoundary${new Date().getTime()}`;
+    const fields: MultipartField[] = [
+      { name: 'scene', value: scene },
+      { name: 'message', value: message },
+      { name: 'conversation_id', value: conversationId > 0 ? `${conversationId}` : '' },
+      { name: 'related_question_id', value: relatedQuestionId > 0 ? `${relatedQuestionId}` : '' },
+      { name: 'attachment_type', value: attachmentType }
+    ];
+
+    let body: ArrayBuffer;
+    try {
+      body = buildMultipartBody(boundary, fields, attachmentPath, attachmentName);
+    } catch (error) {
+      request.destroy();
+      reject(new Error(`上传附件失败：${(error as Error).message}`));
+      return;
+    }
+
+    const header: RequestHeader = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      Authorization: `Bearer ${token}`
+    };
+
+    request.request(
+      `${API_BASE_URL}/ai-learning/chat`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: body,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 20000,
+        readTimeout: 300000
+      },
+      (error, response) => {
+        request.destroy();
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+
+        try {
+          const raw = response.result as string;
+          resolve(JSON.parse(raw) as CommonResult<AiLearningChatData>);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+export function explainWrongQuestion(
+  token: string,
+  questionId: number
+): Promise<CommonResult<AiQuestionExplanationData>> {
+  const body: ExplainQuestionRequest = {
+    question_id: questionId
+  };
+  return requestJson<AiQuestionExplanationData>(
+    http.RequestMethod.POST,
+    '/ai-learning/explain-question',
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function generateStudyPlan(
+  token: string,
+  days: number
+): Promise<CommonResult<AiDiaryPlanData>> {
+  const body: StudyPlanRequest = {
+    days: days
+  };
+  return requestJson<AiDiaryPlanData>(
+    http.RequestMethod.POST,
+    '/ai-learning/diary-plan',
+    token,
+    JSON.stringify(body)
   );
 }
 

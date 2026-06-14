@@ -1023,3 +1023,280 @@ export function polishDiary(
     );
   });
 }
+
+export interface QuestionOptionItem {
+  optionKey: string;
+  content: string;
+  isCorrect: number;
+}
+
+export interface QuestionListItem {
+  id: number;
+  seq: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  latestIsCorrect: number;
+  answerText: string;
+  options: QuestionOptionItem[];
+  tags: string[];
+}
+
+export interface QuestionFilterOptions {
+  types: QuestionTypeOption[];
+  difficulties: number[];
+  knowledgePoints: string[];
+}
+
+export interface QuestionTypeOption {
+  value: string;
+  label: string;
+}
+
+export interface PaginationInfo {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}
+
+export interface QuestionListData {
+  bank: QuestionBankSummary;
+  questions: QuestionListItem[];
+  filters: QuestionFilterOptions;
+  pagination: PaginationInfo;
+}
+
+export interface QuestionListQuery {
+  bankId: number;
+  page: number;
+  pageSize: number;
+  keyword: string;
+  type: string;
+  difficulty: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  wrongOnly: boolean;
+}
+
+function appendQuery(path: string, key: string, value: string): string {
+  if (value.length === 0) {
+    return path;
+  }
+
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}${key}=${encodeURIComponent(value)}`;
+}
+
+export function getQuestionList(
+  token: string,
+  query: QuestionListQuery
+): Promise<CommonResult<QuestionListData>> {
+  let path = `/question-banks/${query.bankId}/questions`;
+
+  path = appendQuery(path, 'page', query.page.toString());
+  path = appendQuery(path, 'pageSize', query.pageSize.toString());
+  path = appendQuery(path, 'keyword', query.keyword);
+  path = appendQuery(path, 'type', query.type);
+
+  if (query.difficulty > 0) {
+    path = appendQuery(path, 'difficulty', query.difficulty.toString());
+  }
+
+  path = appendQuery(path, 'knowledgePoint', query.knowledgePoint);
+  path = appendQuery(path, 'practiceStatus', query.practiceStatus);
+  path = appendQuery(path, 'wrongOnly', query.wrongOnly ? '1' : '0');
+
+  return requestJson<QuestionListData>(
+    http.RequestMethod.GET,
+    path,
+    token
+  );
+}
+
+export interface QuestionImportResult {
+  importId: number;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  errorMessage: string;
+}
+
+interface UploadExcelHeader {
+  'Content-Type': string;
+  Authorization: string;
+}
+
+export function importQuestionsFromExcel(
+  token: string,
+  bankId: number,
+  filePath: string,
+  fileName: string
+): Promise<CommonResult<QuestionImportResult>> {
+  return new Promise((resolve: (value: CommonResult<QuestionImportResult>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+
+    const header: UploadExcelHeader = {
+      'Content-Type': 'multipart/form-data',
+      Authorization: `Bearer ${token}`
+    };
+
+    const filePart: http.MultiFormData = {
+      name: 'file',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filePath: filePath,
+      remoteFileName: fileName
+    };
+
+    request.request(
+      `${API_BASE_URL}/question-banks/${bankId}/import-excel`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        multiFormDataList: [filePart],
+        connectTimeout: 15000,
+        readTimeout: 60000
+      },
+      (error, response) => {
+        request.destroy();
+
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+
+        try {
+          const raw = response.result as string;
+          const result = JSON.parse(raw) as CommonResult<QuestionImportResult>;
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+// 追加到 ets/common/ApiClient.ets 的末尾即可。
+// 依赖本文件已有的 CommonResult<T>、QuestionOptionItem、requestJson<T>()。
+
+export interface PracticeQuestionItem {
+  id: number;
+  seq: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  practiceStatus: string;
+  practiceStatusLabel: string;
+  options: QuestionOptionItem[];
+}
+
+export interface PracticeStartData {
+  sessionId: number;
+  bankId: number;
+  mode: string;
+  requestedCount: number;
+  actualCount: number;
+  questions: PracticeQuestionItem[];
+}
+
+export interface PracticeSessionData {
+  sessionId: number;
+  bankId: number;
+  bankName: string;
+  mode: string;
+  totalCount: number;
+  startedAt: string;
+  finishedAt: string;
+  questions: PracticeQuestionItem[];
+}
+
+export interface PracticeAnswerSubmitItem {
+  question_id: number;
+  user_answer: string;
+  used_seconds: number;
+}
+
+export interface PracticeAnswerResultItem {
+  questionId: number;
+  userAnswer: string;
+  isCorrect: number;
+  correctAnswer: string;
+  analysis: string;
+}
+
+export interface PracticeSubmitData {
+  sessionId: number;
+  totalCount: number;
+  correctCount: number;
+  wrongCount: number;
+  accuracyRate: number;
+  answers: PracticeAnswerResultItem[];
+}
+
+interface PracticeStartRequest {
+  bank_id: number;
+  count: number;
+  mode: string;
+}
+
+interface PracticeSubmitRequest {
+  answers: PracticeAnswerSubmitItem[];
+}
+
+export function startPracticeSession(
+  token: string,
+  bankId: number,
+  count: number,
+  mode: string
+): Promise<CommonResult<PracticeStartData>> {
+  const body: PracticeStartRequest = {
+    bank_id: bankId,
+    count: count,
+    mode: mode
+  };
+
+  return requestJson<PracticeStartData>(
+    http.RequestMethod.POST,
+    '/practice/start',
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function getPracticeSession(
+  token: string,
+  sessionId: number
+): Promise<CommonResult<PracticeSessionData>> {
+  return requestJson<PracticeSessionData>(
+    http.RequestMethod.GET,
+    `/practice-sessions/${sessionId}`,
+    token
+  );
+}
+
+export function submitPracticeSession(
+  token: string,
+  sessionId: number,
+  answers: PracticeAnswerSubmitItem[]
+): Promise<CommonResult<PracticeSubmitData>> {
+  const body: PracticeSubmitRequest = {
+    answers: answers
+  };
+
+  return requestJson<PracticeSubmitData>(
+    http.RequestMethod.POST,
+    `/practice-sessions/${sessionId}/submit`,
+    token,
+    JSON.stringify(body)
+  );
+}

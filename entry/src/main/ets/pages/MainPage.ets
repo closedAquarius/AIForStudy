@@ -21,9 +21,55 @@ struct MainPage {
         }
       }
     }
+    const currentUser = this.getCurrentUser();
+    if (currentUser) {
+      this.nickname = currentUser.nickname || currentUser.username;
+    }
+  }
+
+  private getCurrentUser(): LoginUser | undefined {
+    const userText = AppStorage.Get<string>('currentUser') ?? '';
+    if (userText.length === 0) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(userText) as LoginUser;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  private getAvatarUrl(): string {
+    const user = this.getCurrentUser();
+    return user?.avatarUrl || 'ailearning_icon.png';
+  }
+
+  private goProfile(): void {
+    router.pushUrl({
+      url: 'pages/ProfilePage'
+    });
+  }
+
+  @Builder
+  UserAvatar() {
+    if (this.getAvatarUrl() === 'ailearning_icon.png') {
+      Image($r('app.media.ailearning_icon'))
+        .width(24)
+        .height(24)
+        .objectFit(ImageFit.Cover)
+        .borderRadius(12)
+    } else {
+      Image(this.getAvatarUrl())
+        .width(24)
+        .height(24)
+        .objectFit(ImageFit.Cover)
+        .borderRadius(12)
+    }
   }
 
   private logout(): void {
+    AppStorage.SetOrCreate<string>('token', '');
+    AppStorage.SetOrCreate<string>('currentUser', '');
     router.replaceUrl({
       url: 'pages/LoginPage'
     });
@@ -45,11 +91,11 @@ struct MainPage {
             .height(30)
             .fill('#EFFFFFFF')
 
-          Image($r('app.media.ailearning_icon'))
-            .width(20)
-            .height(20)
-            .objectFit(ImageFit.Contain)
+          this.UserAvatar()
         }
+        .onClick(() => {
+          this.goProfile();
+        })
 
         Text(`您好，${this.nickname}`)
           .fontSize(16)

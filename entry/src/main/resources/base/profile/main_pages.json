@@ -9,6 +9,7 @@
     "pages/PracticeExamPage",
     "pages/SetQuestionPage",
     "pages/DiaryPage",
-    "pages/AiLearningPage"
+    "pages/AiLearningPage",
+    "pages/ProfilePage"
   ]
 }

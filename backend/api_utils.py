@@ -15,11 +15,15 @@ def fail(message, status=400):
 
 
 def public_user(row):
+    avatar_url = row.get("avatar_url") or "ailearning_icon.png"
+    if avatar_url.startswith("/api/"):
+        avatar_url = request.host_url.rstrip("/") + avatar_url
     return {
         "id": row["id"],
         "username": row["username"],
         "nickname": row["nickname"],
         "email": row.get("email"),
+        "avatarUrl": avatar_url,
         "role": row["role"],
     }
 

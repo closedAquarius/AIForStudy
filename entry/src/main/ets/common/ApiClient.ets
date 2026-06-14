@@ -7,6 +7,7 @@ export interface LoginUser {
   username: string;
   nickname: string;
   email?: string;
+  avatarUrl?: string;
   role: string;
 }
 
@@ -435,13 +436,13 @@ export interface QuestionTypeOption {
   label: string;
 }
 
-export interface QuestionOptionItem {
+export interface LegacyQuestionOptionItem {
   optionKey: string;
   content: string;
   isCorrect: number;
 }
 
-export interface QuestionListItem {
+export interface LegacyQuestionListItem {
   id: number;
   seq: number;
   type: string;
@@ -454,7 +455,7 @@ export interface QuestionListItem {
   practiceStatus: string;
   latestIsCorrect: number;
   answerText: string;
-  options: QuestionOptionItem[];
+  options: LegacyQuestionOptionItem[];
   tags: string[];
 }
 
@@ -580,6 +581,36 @@ export interface AiQuestionExplanationData {
   explanation: string;
 }
 
+export interface ProfileActivityItem {
+  date: string;
+  label: string;
+  count: number;
+}
+
+export interface ProfileOverviewData {
+  totalAnswers: number;
+  correctAnswers: number;
+  wrongAnswers: number;
+  currentWrongCount: number;
+  accuracyRate: number;
+  sessionCount: number;
+  studyMinutes: number;
+  diaryCount: number;
+  averageMood: number;
+  ownedBankCount: number;
+  availableBankCount: number;
+  ownedQuestionCount: number;
+  aiGeneratedQuestionCount: number;
+  documentCount: number;
+  aiConversationCount: number;
+  recentActivity: ProfileActivityItem[];
+  evaluation: string;
+}
+
+export interface ProfileUpdateData {
+  user: LoginUser;
+}
+
 interface CreateQuestionBankRequest {
   name: string;
   description: string;
@@ -595,6 +626,21 @@ interface ExplainQuestionRequest {
 
 interface StudyPlanRequest {
   days: number;
+}
+
+interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+interface PasswordResetCodeRequest {
+  email: string;
+}
+
+interface PasswordResetConfirmRequest {
+  email: string;
+  code: string;
+  new_password: string;
 }
 
 interface RequestHeader {
@@ -915,6 +961,119 @@ export function generateStudyPlan(
   );
 }
 
+export function getProfileOverview(
+  token: string
+): Promise<CommonResult<ProfileOverviewData>> {
+  return requestJson<ProfileOverviewData>(
+    http.RequestMethod.GET,
+    '/profile/overview',
+    token
+  );
+}
+
+export function updateProfile(
+  token: string,
+  nickname: string,
+  email: string,
+  avatarPath: string = '',
+  avatarName: string = ''
+): Promise<CommonResult<ProfileUpdateData>> {
+  return new Promise((resolve: (value: CommonResult<ProfileUpdateData>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const boundary = `AIForStudyProfileBoundary${new Date().getTime()}`;
+    const fields: MultipartField[] = [
+      { name: 'nickname', value: nickname },
+      { name: 'email', value: email }
+    ];
+
+    let body: ArrayBuffer;
+    try {
+      body = buildMultipartBody(boundary, fields, avatarPath, avatarName);
+    } catch (error) {
+      request.destroy();
+      reject(new Error(`读取头像失败：${(error as Error).message}`));
+      return;
+    }
+
+    const header: RequestHeader = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      Authorization: `Bearer ${token}`
+    };
+    request.request(
+      `${API_BASE_URL}/profile/update`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: body,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 10000,
+        readTimeout: 60000
+      },
+      (error, response) => {
+        request.destroy();
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        try {
+          resolve(JSON.parse(response.result as string) as CommonResult<ProfileUpdateData>);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+export function changeProfilePassword(
+  token: string,
+  oldPassword: string,
+  newPassword: string
+): Promise<CommonResult<EmptyResponseData>> {
+  const body: ChangePasswordRequest = {
+    old_password: oldPassword,
+    new_password: newPassword
+  };
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.POST,
+    '/profile/change-password',
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function sendPasswordResetCode(
+  email: string
+): Promise<CommonResult<EmptyResponseData>> {
+  const body: PasswordResetCodeRequest = {
+    email: email
+  };
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.POST,
+    '/auth/password-reset/send-code',
+    '',
+    JSON.stringify(body)
+  );
+}
+
+export function resetPasswordByEmail(
+  email: string,
+  code: string,
+  newPassword: string
+): Promise<CommonResult<EmptyResponseData>> {
+  const body: PasswordResetConfirmRequest = {
+    email: email,
+    code: code,
+    new_password: newPassword
+  };
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.POST,
+    '/auth/password-reset/confirm',
+    '',
+    JSON.stringify(body)
+  );
+}
+
 export function saveStudyDiary(
   token: string,
   entryDate: string,
@@ -1047,32 +1206,32 @@ export interface QuestionListItem {
   tags: string[];
 }
 
-export interface QuestionFilterOptions {
-  types: QuestionTypeOption[];
+export interface LegacyQuestionFilterOptions {
+  types: LegacyQuestionTypeOption[];
   difficulties: number[];
   knowledgePoints: string[];
 }
 
-export interface QuestionTypeOption {
+export interface LegacyQuestionTypeOption {
   value: string;
   label: string;
 }
 
-export interface PaginationInfo {
+export interface LegacyPaginationInfo {
   page: number;
   pageSize: number;
   total: number;
   pageCount: number;
 }
 
-export interface QuestionListData {
+export interface LegacyQuestionListData {
   bank: QuestionBankSummary;
-  questions: QuestionListItem[];
-  filters: QuestionFilterOptions;
-  pagination: PaginationInfo;
+  questions: LegacyQuestionListItem[];
+  filters: LegacyQuestionFilterOptions;
+  pagination: LegacyPaginationInfo;
 }
 
-export interface QuestionListQuery {
+export interface LegacyQuestionListQuery {
   bankId: number;
   page: number;
   pageSize: number;
@@ -1093,10 +1252,10 @@ function appendQuery(path: string, key: string, value: string): string {
   return `${path}${separator}${key}=${encodeURIComponent(value)}`;
 }
 
-export function getQuestionList(
+export function getQuestionListLegacy(
   token: string,
-  query: QuestionListQuery
-): Promise<CommonResult<QuestionListData>> {
+  query: LegacyQuestionListQuery
+): Promise<CommonResult<LegacyQuestionListData>> {
   let path = `/question-banks/${query.bankId}/questions`;
 
   path = appendQuery(path, 'page', query.page.toString());
@@ -1112,14 +1271,14 @@ export function getQuestionList(
   path = appendQuery(path, 'practiceStatus', query.practiceStatus);
   path = appendQuery(path, 'wrongOnly', query.wrongOnly ? '1' : '0');
 
-  return requestJson<QuestionListData>(
+  return requestJson<LegacyQuestionListData>(
     http.RequestMethod.GET,
     path,
     token
   );
 }
 
-export interface QuestionImportResult {
+export interface LegacyQuestionImportResult {
   importId: number;
   totalRows: number;
   successRows: number;
@@ -1132,13 +1291,13 @@ interface UploadExcelHeader {
   Authorization: string;
 }
 
-export function importQuestionsFromExcel(
+export function importQuestionsFromExcelLegacy(
   token: string,
   bankId: number,
   filePath: string,
   fileName: string
-): Promise<CommonResult<QuestionImportResult>> {
-  return new Promise((resolve: (value: CommonResult<QuestionImportResult>) => void, reject: (reason: Error) => void) => {
+): Promise<CommonResult<LegacyQuestionImportResult>> {
+  return new Promise((resolve: (value: CommonResult<LegacyQuestionImportResult>) => void, reject: (reason: Error) => void) => {
     const request = http.createHttp();
 
     const header: UploadExcelHeader = {
@@ -1172,7 +1331,7 @@ export function importQuestionsFromExcel(
 
         try {
           const raw = response.result as string;
-          const result = JSON.parse(raw) as CommonResult<QuestionImportResult>;
+          const result = JSON.parse(raw) as CommonResult<LegacyQuestionImportResult>;
           resolve(result);
         } catch (parseError) {
           reject(new Error('后端响应解析失败'));

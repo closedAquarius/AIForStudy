@@ -2,10 +2,11 @@ import os
 import json
 import uuid
 import tempfile
+import smtplib
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from pymysql.err import IntegrityError
 
 from api_utils import success, fail, public_user, require_current_user
@@ -18,6 +19,7 @@ from services.ai_learning_service import AiLearningService, AiProviderBusyError
 from services.document_text_extractor import DocumentTextExtractor
 from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
+from services.password_reset_service import PasswordResetService
 from practice_api import practice_bp
 
 
@@ -28,6 +30,8 @@ app.register_blueprint(practice_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+AVATAR_DIR = UPLOAD_DIR / "avatars"
+AVATAR_DIR.mkdir(exist_ok=True)
 
 
 @app.after_request
@@ -100,15 +104,24 @@ def register():
         with db_cursor(commit=True) as cursor:
             cursor.execute(
                 """
-                INSERT INTO users (username, password, nickname, email)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO users (username, password, nickname, email, avatar_url)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (username, password, nickname, email),
+                (username, password, nickname, email, "ailearning_icon.png"),
             )
             user_id = cursor.lastrowid
             cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
             user = cursor.fetchone()
-        return success({"user": public_user(user)}, "注册成功", 201)
+            token = uuid.uuid4().hex
+            expires_at = datetime.now() + timedelta(days=7)
+            cursor.execute(
+                """
+                INSERT INTO user_sessions (user_id, token, expires_at)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, token, expires_at),
+            )
+        return success({"token": token, "user": public_user(user)}, "注册成功", 201)
     except IntegrityError:
         return fail("用户名或邮箱已存在", 409)
 
@@ -148,6 +161,35 @@ def login():
     return success({"token": token, "user": public_user(user)}, "登录成功")
 
 
+@app.post("/api/auth/password-reset/send-code")
+def send_password_reset_code():
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip()
+    try:
+        PasswordResetService().send_code(email)
+        return success(message="验证码已发送，请检查邮箱")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except (OSError, smtplib.SMTPException) as exc:
+        app.logger.exception("send password reset email failed")
+        return fail(f"验证码发送失败，请检查邮件服务配置: {exc}", 502)
+    except RuntimeError as exc:
+        return fail(str(exc), 500)
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset():
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip()
+    code = str(body.get("code") or "").strip()
+    new_password = str(body.get("new_password") or "")
+    try:
+        PasswordResetService().reset_password(email, code, new_password)
+        return success(message="密码重置成功，请使用新密码登录")
+    except ValueError as exc:
+        return fail(str(exc), 400)
+
+
 @app.get("/api/me")
 def me():
     auth_header = request.headers.get("Authorization", "")
@@ -173,6 +215,291 @@ def me():
     if not user:
         return fail("登录已过期，请重新登录", 401)
     return success({"user": public_user(user)})
+
+
+def build_learning_evaluation(total_answers, accuracy_rate, current_wrong_count, diary_count, average_mood):
+    if total_answers == 0:
+        return "还没有刷题记录。建议先完成一组基础练习，让系统逐步了解你的学习情况。"
+
+    if accuracy_rate >= 85:
+        level_text = "当前知识掌握较扎实"
+    elif accuracy_rate >= 65:
+        level_text = "当前学习状态较稳定"
+    else:
+        level_text = "当前仍有较大的巩固空间"
+
+    if current_wrong_count == 0:
+        review_text = "目前没有待复习错题，可以适当提高题目难度。"
+    elif current_wrong_count <= 5:
+        review_text = f"还有 {current_wrong_count} 道错题需要复习，建议近期逐题消化。"
+    else:
+        review_text = f"当前积累了 {current_wrong_count} 道错题，建议优先进行错题专项训练。"
+
+    if diary_count == 0:
+        diary_text = "可以开始记录学习日记，帮助系统持续分析学习节奏。"
+    elif average_mood >= 7:
+        diary_text = "近期学习情绪良好，适合保持当前节奏。"
+    elif average_mood >= 5:
+        diary_text = "近期状态整体平稳，注意安排休息和复盘。"
+    else:
+        diary_text = "近期学习状态偏低，建议降低单次任务量并优先完成关键目标。"
+
+    return f"{level_text}，累计正确率为 {accuracy_rate:.1f}%。{review_text}{diary_text}"
+
+
+@app.get("/api/profile/overview")
+def profile_overview():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    user_id = user["id"]
+    with db_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+              COUNT(*) AS total_answers,
+              COALESCE(SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END), 0) AS correct_answers,
+              COALESCE(SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END), 0) AS wrong_answers,
+              COALESCE(SUM(used_seconds), 0) AS answer_seconds
+            FROM practice_answers
+            WHERE user_id=%s
+            """,
+            (user_id,),
+        )
+        answer_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS current_wrong_count
+            FROM practice_answers pa
+            WHERE pa.user_id=%s
+              AND pa.id = (
+                SELECT MAX(pa2.id)
+                FROM practice_answers pa2
+                WHERE pa2.user_id=pa.user_id
+                  AND pa2.question_id=pa.question_id
+              )
+              AND pa.is_correct=0
+            """,
+            (user_id,),
+        )
+        wrong_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT
+              COUNT(*) AS session_count,
+              COALESCE(SUM(duration_seconds), 0) AS session_seconds
+            FROM practice_sessions
+            WHERE user_id=%s AND finished_at IS NOT NULL
+            """,
+            (user_id,),
+        )
+        session_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT
+              COUNT(*) AS diary_count,
+              COALESCE(AVG(mood_score), 0) AS average_mood
+            FROM diary_entries
+            WHERE user_id=%s
+            """,
+            (user_id,),
+        )
+        diary_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN owner_user_id=%s THEN 1 ELSE 0 END), 0) AS owned_bank_count,
+              COUNT(*) AS available_bank_count
+            FROM question_banks
+            WHERE owner_user_id=%s OR visibility='public'
+            """,
+            (user_id, user_id),
+        )
+        bank_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT
+              COUNT(*) AS owned_question_count,
+              COALESCE(SUM(CASE WHEN q.ai_generated=1 THEN 1 ELSE 0 END), 0) AS ai_generated_question_count
+            FROM questions q
+            JOIN question_banks qb ON qb.id=q.question_bank_id
+            WHERE qb.owner_user_id=%s
+            """,
+            (user_id,),
+        )
+        question_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS document_count
+            FROM documents
+            WHERE owner_user_id=%s
+            """,
+            (user_id,),
+        )
+        document_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS ai_conversation_count
+            FROM ai_conversations
+            WHERE user_id=%s
+            """,
+            (user_id,),
+        )
+        conversation_stats = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT DATE(answered_at) AS stat_date, COUNT(*) AS answer_count
+            FROM practice_answers
+            WHERE user_id=%s
+              AND answered_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+            GROUP BY DATE(answered_at)
+            ORDER BY stat_date
+            """,
+            (user_id,),
+        )
+        recent_rows = cursor.fetchall()
+
+    total_answers = int(answer_stats.get("total_answers") or 0)
+    correct_answers = int(answer_stats.get("correct_answers") or 0)
+    wrong_answers = int(answer_stats.get("wrong_answers") or 0)
+    current_wrong_count = int(wrong_stats.get("current_wrong_count") or 0)
+    session_count = int(session_stats.get("session_count") or 0)
+    study_seconds = max(
+        int(answer_stats.get("answer_seconds") or 0),
+        int(session_stats.get("session_seconds") or 0),
+    )
+    diary_count = int(diary_stats.get("diary_count") or 0)
+    average_mood = round(float(diary_stats.get("average_mood") or 0), 1)
+    owned_bank_count = int(bank_stats.get("owned_bank_count") or 0)
+    available_bank_count = int(bank_stats.get("available_bank_count") or 0)
+    owned_question_count = int(question_stats.get("owned_question_count") or 0)
+    ai_generated_question_count = int(question_stats.get("ai_generated_question_count") or 0)
+    document_count = int(document_stats.get("document_count") or 0)
+    ai_conversation_count = int(conversation_stats.get("ai_conversation_count") or 0)
+    accuracy_rate = round(correct_answers * 100 / total_answers, 1) if total_answers else 0.0
+
+    recent_map = {str(row["stat_date"]): int(row.get("answer_count") or 0) for row in recent_rows}
+    recent_activity = []
+    for offset in range(6, -1, -1):
+        stat_date = (datetime.now() - timedelta(days=offset)).date()
+        date_text = stat_date.isoformat()
+        recent_activity.append(
+            {
+                "date": date_text,
+                "label": f"{stat_date.month}/{stat_date.day}",
+                "count": recent_map.get(date_text, 0),
+            }
+        )
+
+    evaluation = build_learning_evaluation(
+        total_answers,
+        accuracy_rate,
+        current_wrong_count,
+        diary_count,
+        average_mood,
+    )
+
+    return success(
+        {
+            "totalAnswers": total_answers,
+            "correctAnswers": correct_answers,
+            "wrongAnswers": wrong_answers,
+            "currentWrongCount": current_wrong_count,
+            "accuracyRate": accuracy_rate,
+            "sessionCount": session_count,
+            "studyMinutes": round(study_seconds / 60),
+            "diaryCount": diary_count,
+            "averageMood": average_mood,
+            "ownedBankCount": owned_bank_count,
+            "availableBankCount": available_bank_count,
+            "ownedQuestionCount": owned_question_count,
+            "aiGeneratedQuestionCount": ai_generated_question_count,
+            "documentCount": document_count,
+            "aiConversationCount": ai_conversation_count,
+            "recentActivity": recent_activity,
+            "evaluation": evaluation,
+        }
+    )
+
+
+@app.get("/api/profile/avatar/<path:filename>")
+def profile_avatar(filename):
+    return send_from_directory(AVATAR_DIR, filename)
+
+
+@app.post("/api/profile/update")
+def update_profile():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    nickname = (request.form.get("nickname") or "").strip()
+    email = (request.form.get("email") or "").strip() or None
+    if not nickname:
+        return fail("昵称不能为空")
+    if len(nickname) > 64:
+        return fail("昵称不能超过 64 个字符")
+    if email and ("@" not in email or len(email) > 128):
+        return fail("邮箱格式不正确")
+
+    avatar_url = user.get("avatar_url") or "ailearning_icon.png"
+    avatar_file = request.files.get("avatar") or request.files.get("file")
+    if avatar_file and avatar_file.filename:
+        suffix = Path(secure_filename(avatar_file.filename)).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+            return fail("头像仅支持 PNG、JPG、JPEG 或 WEBP")
+        avatar_name = f"user-{user['id']}-{uuid.uuid4().hex}{suffix}"
+        avatar_file.save(AVATAR_DIR / avatar_name)
+        avatar_url = f"/api/profile/avatar/{avatar_name}"
+
+    try:
+        with db_cursor(commit=True) as cursor:
+            cursor.execute(
+                """
+                UPDATE users
+                SET nickname=%s, email=%s, avatar_url=%s
+                WHERE id=%s
+                """,
+                (nickname, email, avatar_url, user["id"]),
+            )
+            cursor.execute("SELECT * FROM users WHERE id=%s", (user["id"],))
+            updated_user = cursor.fetchone()
+        return success({"user": public_user(updated_user)}, "个人资料更新成功")
+    except IntegrityError:
+        return fail("该邮箱已被其他账号使用", 409)
+
+
+@app.post("/api/profile/change-password")
+def change_profile_password():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    old_password = str(body.get("old_password") or "")
+    new_password = str(body.get("new_password") or "")
+    if old_password != user["password"]:
+        return fail("原密码不正确", 400)
+    if len(new_password) < 6:
+        return fail("新密码至少需要 6 个字符", 400)
+    if old_password == new_password:
+        return fail("新密码不能与原密码相同", 400)
+
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "UPDATE users SET password=%s WHERE id=%s",
+            (new_password, user["id"]),
+        )
+    return success(message="密码修改成功")
 
 
 @app.get("/api/dashboard/summary")

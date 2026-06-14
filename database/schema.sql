@@ -26,6 +26,7 @@ DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS question_banks;
 DROP TABLE IF EXISTS subjects;
 DROP TABLE IF EXISTS user_sessions;
+DROP TABLE IF EXISTS password_reset_codes;
 DROP TABLE IF EXISTS users;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -36,7 +37,7 @@ CREATE TABLE users (
   password VARCHAR(128) NOT NULL COMMENT 'Demo only: plain text password',
   nickname VARCHAR(64) NOT NULL,
   email VARCHAR(128) NULL UNIQUE,
-  avatar_url VARCHAR(512) NULL,
+  avatar_url VARCHAR(512) NOT NULL DEFAULT 'ailearning_icon.png',
   role ENUM('student', 'teacher', 'admin') NOT NULL DEFAULT 'student',
   status ENUM('active', 'disabled') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -52,6 +53,21 @@ CREATE TABLE user_sessions (
   CONSTRAINT fk_user_sessions_user
     FOREIGN KEY (user_id) REFERENCES users(id)
     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE password_reset_codes (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  email VARCHAR(128) NOT NULL,
+  code_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  consumed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_password_reset_codes_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  INDEX idx_password_reset_email_created (email, created_at),
+  INDEX idx_password_reset_user_active (user_id, consumed_at, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE subjects (

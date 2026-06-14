@@ -55,6 +55,8 @@ struct RegisterPage {
 
       if (result.success && result.data?.user) {
         this.message = '注册成功';
+        AppStorage.SetOrCreate<string>('token', result.data.token ?? '');
+        AppStorage.SetOrCreate<string>('currentUser', JSON.stringify(result.data.user));
         await this.goMain(result.data.user, result.data.token ?? '');
         return;
       }

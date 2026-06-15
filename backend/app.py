@@ -23,6 +23,7 @@ from services.password_reset_service import PasswordResetService
 from practice_api import practice_bp
 from question_record_api import question_record_bp
 from knowledge_base_api import knowledge_base_bp
+from review_plan_api import review_plan_bp
 
 
 
@@ -31,6 +32,7 @@ app.register_blueprint(question_bank_bp, url_prefix="/api")
 app.register_blueprint(practice_bp, url_prefix="/api")
 app.register_blueprint(question_record_bp, url_prefix="/api")
 app.register_blueprint(knowledge_base_bp, url_prefix="/api")
+app.register_blueprint(review_plan_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -285,6 +287,7 @@ def profile_overview():
                   AND pa2.question_id=pa.question_id
               )
               AND pa.is_correct=0
+              AND pa.review_status='needs_review'
             """,
             (user_id,),
         )
@@ -709,6 +712,18 @@ def ai_learning_wrong_questions():
     limit = optional_int(request.args.get("limit") or 30)
     questions = AiLearningService().list_wrong_questions(user["id"], bank_id, max(1, min(limit or 30, 100)))
     return success({"questions": questions}, "错题获取成功")
+
+
+@app.delete("/api/ai-learning/wrong-questions/<int:question_id>")
+def ai_learning_remove_wrong_question(question_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    removed = AiLearningService().remove_wrong_question(user["id"], question_id)
+    if not removed:
+        return fail("错题不存在或已经移出", 404)
+    return success(None, "已移出错题本")
 
 
 @app.post("/api/ai-learning/chat")

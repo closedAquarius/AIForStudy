@@ -142,6 +142,7 @@ class AiLearningService:
                 LEFT JOIN tags t ON t.id = qt.tag_id
                 WHERE q.status = 'active'
                   AND last_pa.is_correct = 0
+                  AND last_pa.review_status = 'needs_review'
                   {bank_filter}
                 GROUP BY q.id, q.question_bank_id, q.type, q.stem, q.analysis, q.difficulty,
                          q.score, q.knowledge_point, qb.name, last_pa.is_correct, last_pa.answered_at
@@ -170,6 +171,30 @@ class AiLearningService:
                 "latestAnsweredAt": str(row.get("latest_answered_at") or ""),
             })
         return result
+
+    def remove_wrong_question(self, user_id: int, question_id: int) -> bool:
+        with db_cursor(commit=True) as cursor:
+            cursor.execute(
+                """
+                UPDATE practice_answers
+                SET review_status = 'mastered'
+                WHERE id = (
+                  SELECT latest.id
+                  FROM (
+                    SELECT pa.id
+                    FROM practice_answers pa
+                    WHERE pa.user_id = %s
+                      AND pa.question_id = %s
+                      AND pa.is_correct = 0
+                      AND pa.review_status = 'needs_review'
+                    ORDER BY pa.answered_at DESC, pa.id DESC
+                    LIMIT 1
+                  ) AS latest
+                )
+                """,
+                (user_id, question_id),
+            )
+            return cursor.rowcount > 0
 
     def explain_wrong_question(self, user_id: int, question_id: int) -> dict[str, Any]:
         with db_cursor() as cursor:

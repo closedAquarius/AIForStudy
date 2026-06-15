@@ -9,34 +9,6 @@ import {
   getProfileOverview
 } from '../common/ApiClient';
 
-@Component
-struct ProfileStatItem {
-  @Prop value: string = '';
-  @Prop label: string = '';
-  @Prop color: string = '#2D75FF';
-
-  build() {
-    Column({ space: 5 }) {
-      Text(this.value)
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.color)
-        .maxLines(1)
-
-      Text(this.label)
-        .fontSize(11)
-        .fontColor('#64748B')
-        .maxLines(1)
-    }
-    .layoutWeight(1)
-    .height(76)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(8)
-    .border({ width: 1, color: '#E5EAF3' })
-  }
-}
-
 @Entry
 @Component
 struct ProfilePage {
@@ -180,7 +152,7 @@ struct ProfilePage {
       evaluation: data.evaluation || '完成练习后，这里会生成学习评价。'
     };
     this.overviewData = nextData;
-
+    
     this.totalAnswers = nextData.totalAnswers;
     this.correctAnswers = nextData.correctAnswers;
     this.currentWrongCount = nextData.currentWrongCount;
@@ -392,6 +364,28 @@ struct ProfilePage {
   }
 
   @Builder
+  StatItem(value: string, label: string, color: string) {
+    Column({ space: 5 }) {
+      Text(value)
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(color)
+        .maxLines(1)
+
+      Text(label)
+        .fontSize(11)
+        .fontColor('#64748B')
+        .maxLines(1)
+    }
+    .layoutWeight(1)
+    .height(76)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 1, color: '#E5EAF3' })
+  }
+
+  @Builder
   AccuracySection() {
     Column({ space: 12 }) {
       Row() {
@@ -504,20 +498,20 @@ struct ProfilePage {
         .fontColor('#0B1B44')
 
       Row({ space: 10 }) {
-        ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF' })
-        ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A' })
+        this.StatItem(`${this.ownedBankCount}`, '我的题库', '#2D75FF')
+        this.StatItem(`${this.availableBankCount}`, '可用题库', '#16A66A')
       }
       .width('100%')
 
       Row({ space: 10 }) {
-        ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7' })
-        ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D' })
+        this.StatItem(`${this.ownedQuestionCount}`, '题库题目', '#7C5CE7')
+        this.StatItem(`${this.aiGeneratedQuestionCount}`, 'AI 生成题', '#EC7A3D')
       }
       .width('100%')
 
       Row({ space: 10 }) {
-        ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5' })
-        ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252' })
+        this.StatItem(`${this.documentCount}`, '上传资料', '#0EA5A5')
+        this.StatItem(`${this.aiConversationCount}`, 'AI 会话', '#E05252')
       }
       .width('100%')
     }
@@ -532,12 +526,12 @@ struct ProfilePage {
   @Builder
   DiaryStatsSection(version: number) {
     Row({ space: 10 }) {
-      ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7' })
-      ProfileStatItem({
-        value: this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
-        label: '平均心情',
-        color: '#EC7A3D'
-      })
+      this.StatItem(`${this.diaryCount}`, '日记天数', '#7C5CE7')
+      this.StatItem(
+        this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
+        '平均心情',
+        '#EC7A3D'
+      )
     }
     .width('100%')
     .id(`diary-stats-${version}`)
@@ -897,14 +891,14 @@ struct ProfilePage {
           }
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.totalAnswers}`, label: '累计答题', color: '#2D75FF' })
-            ProfileStatItem({ value: `${this.currentWrongCount}`, label: '当前错题', color: '#E05252' })
+            this.StatItem(`${this.totalAnswers}`, '累计答题', '#2D75FF')
+            this.StatItem(`${this.currentWrongCount}`, '当前错题', '#E05252')
           }
           .width('100%')
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.sessionCount}`, label: '练习次数', color: '#16A66A' })
-            ProfileStatItem({ value: this.studyTimeText(), label: '学习时长', color: '#F59E0B' })
+            this.StatItem(`${this.sessionCount}`, '练习次数', '#16A66A')
+            this.StatItem(this.studyTimeText(), '学习时长', '#F59E0B')
           }
           .width('100%')
 
@@ -919,20 +913,20 @@ struct ProfilePage {
               .fontColor('#0B1B44')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF' })
-              ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A' })
+              this.StatItem(`${this.ownedBankCount}`, '我的题库', '#2D75FF')
+              this.StatItem(`${this.availableBankCount}`, '可用题库', '#16A66A')
             }
             .width('100%')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7' })
-              ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D' })
+              this.StatItem(`${this.ownedQuestionCount}`, '题库题目', '#7C5CE7')
+              this.StatItem(`${this.aiGeneratedQuestionCount}`, 'AI 生成题', '#EC7A3D')
             }
             .width('100%')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5' })
-              ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252' })
+              this.StatItem(`${this.documentCount}`, '上传资料', '#0EA5A5')
+              this.StatItem(`${this.aiConversationCount}`, 'AI 会话', '#E05252')
             }
             .width('100%')
           }
@@ -943,12 +937,12 @@ struct ProfilePage {
           .border({ width: 1, color: '#DCE4F0' })
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7' })
-            ProfileStatItem({
-              value: this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
-              label: '平均心情',
-              color: '#EC7A3D'
-            })
+            this.StatItem(`${this.diaryCount}`, '日记天数', '#7C5CE7')
+            this.StatItem(
+              this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
+              '平均心情',
+              '#EC7A3D'
+            )
           }
           .width('100%')
 

@@ -408,7 +408,7 @@ def get_practice_session(session_id):
             """
             SELECT ps.*, qb.name AS bank_name
             FROM practice_sessions ps
-            JOIN question_banks qb ON qb.id = ps.question_bank_id
+            LEFT JOIN question_banks qb ON qb.id = ps.question_bank_id
             WHERE ps.id=%s AND ps.user_id=%s
             LIMIT 1
             """,
@@ -423,7 +423,7 @@ def get_practice_session(session_id):
     return success({
         "sessionId": session["id"],
         "bankId": session["question_bank_id"],
-        "bankName": session.get("bank_name") or "刷题",
+        "bankName": session.get("bank_name") or "今日复习",
         "mode": _parse_json(session.get("filter_config"), {}).get("selected_mode") or session.get("mode"),
         "totalCount": int(session.get("total_count") or len(questions)),
         "startedAt": str(session.get("started_at") or ""),
@@ -536,6 +536,9 @@ def submit_practice_session(session_id):
             """,
             (len(results), correct_count, wrong_count, session_id, user["id"]),
         )
+
+    from services.review_plan_service import ReviewPlanService
+    ReviewPlanService().complete_practice_session(user["id"], session_id, results)
 
     accuracy = round(correct_count * 100 / len(results), 1) if results else 0
     return success({

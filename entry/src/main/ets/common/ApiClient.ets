@@ -871,6 +871,17 @@ export function getWrongQuestions(
   );
 }
 
+export function removeWrongQuestion(
+  token: string,
+  questionId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/ai-learning/wrong-questions/${questionId}`,
+    token
+  );
+}
+
 export function chatAiLearning(
   token: string,
   message: string,
@@ -1744,5 +1755,64 @@ export function getKnowledgeQueries(
     http.RequestMethod.GET,
     `/knowledge-bases/${baseId}/queries?limit=${limit}`,
     token
+  );
+}
+
+export interface DailyReviewTaskItem {
+  id: number;
+  questionId: number;
+  sourceType: string;
+  knowledgePoint: string;
+  status: string;
+  isCorrect?: number | null;
+  type: string;
+  stem: string;
+  difficulty: number;
+  bankName: string;
+}
+
+export interface TodayReviewPlanData {
+  id: number;
+  planDate: string;
+  targetCount: number;
+  completedCount: number;
+  totalCount: number;
+  moodAdjustment: number;
+  moodSummary: string;
+  generationReason: string;
+  status: string;
+  practiceSessionId: number;
+  streakDays: number;
+  tasks: DailyReviewTaskItem[];
+}
+
+export interface TodayReviewStartData {
+  sessionId: number;
+  planId: number;
+}
+
+export function getTodayReviewPlan(
+  token: string
+): Promise<CommonResult<TodayReviewPlanData>> {
+  return requestJson<TodayReviewPlanData>(
+    http.RequestMethod.GET,
+    '/review/today',
+    token,
+    '',
+    15000,
+    30000
+  );
+}
+
+export function startTodayReviewPlan(
+  token: string
+): Promise<CommonResult<TodayReviewStartData>> {
+  return requestJson<TodayReviewStartData>(
+    http.RequestMethod.POST,
+    '/review/today/start',
+    token,
+    '{}',
+    15000,
+    30000
   );
 }

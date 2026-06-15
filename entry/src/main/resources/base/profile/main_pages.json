@@ -13,6 +13,7 @@
     "pages/ProfilePage",
     "pages/WrongQuestionBookPage",
     "pages/FavoriteQuestionPage",
-    "pages/KnowledgeBasePage"
+    "pages/KnowledgeBasePage",
+    "pages/TodayStudyPage"
   ]
 }

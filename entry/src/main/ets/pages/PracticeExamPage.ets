@@ -376,7 +376,7 @@ struct PracticeExamPage {
           autoCancel: false,
           alignment: DialogAlignment.Center,
           primaryButton: {
-            value: '返回题库',
+            value: this.session.mode === 'daily_review' ? '返回今日学习' : '返回题库',
             action: () => {
               router.back();
             }

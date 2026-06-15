@@ -2,7 +2,8 @@ import { router } from '@kit.ArkUI';
 import {
   AiWrongQuestionItem,
   explainWrongQuestion,
-  getWrongQuestions
+  getWrongQuestions,
+  removeWrongQuestion
 } from '../common/ApiClient';
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
 
@@ -14,6 +15,7 @@ struct WrongQuestionBookPage {
   @State keyword: string = '';
   @State expandedIds: number[] = [];
   @State explainingId: number = 0;
+  @State removingId: number = 0;
   @State explanationQuestionId: number = 0;
   @State explanationText: string = '';
   @State message: string = '';
@@ -121,6 +123,34 @@ struct WrongQuestionBookPage {
     }
   }
 
+  private async removeQuestion(question: AiWrongQuestionItem): Promise<void> {
+    if (this.removingId > 0) {
+      return;
+    }
+    this.removingId = question.id;
+    this.message = '';
+    try {
+      const result = await removeWrongQuestion(this.getToken(), question.id);
+      if (result.success) {
+        this.questions = this.questions.filter(
+          (item: AiWrongQuestionItem) => item.id !== question.id
+        );
+        this.expandedIds = this.expandedIds.filter((id: number) => id !== question.id);
+        if (this.explanationQuestionId === question.id) {
+          this.explanationQuestionId = 0;
+          this.explanationText = '';
+        }
+        this.message = '已移出错题本';
+      } else {
+        this.message = result.message || '移出失败';
+      }
+    } catch (error) {
+      this.message = `移出失败：${(error as Error).message}`;
+    } finally {
+      this.removingId = 0;
+    }
+  }
+
   @Builder
   Tag(text: string, color: string) {
     Text(text)
@@ -169,6 +199,17 @@ struct WrongQuestionBookPage {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+
+        Button(this.removingId === question.id ? '移出中...' : '移出')
+          .height(32)
+          .fontSize(12)
+          .fontColor('#DC2626')
+          .backgroundColor('#FFF1F2')
+          .borderRadius(8)
+          .enabled(this.removingId === 0)
+          .onClick(() => {
+            this.removeQuestion(question);
+          })
 
         Button(this.isExpanded(question.id) ? '收起解析' : '查看解析')
           .height(32)

@@ -1,11 +1,64 @@
 import { router } from '@kit.ArkUI';
-import { LoginUser } from '../common/ApiClient';
+import { LoginUser, TodayReviewPlanData, getTodayReviewPlan } from '../common/ApiClient';
 import { FeatureBottomNav } from '../components/FeatureBottomNav';
+
+@Component
+struct TodayStudySummary {
+  @Prop completedCount: number = 0;
+  @Prop totalCount: number = 0;
+  @Prop streakDays: number = 0;
+  @Prop status: string = 'pending';
+
+  build() {
+    Row({ space: 12 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(40)
+          .height(40)
+          .fill('#E9FBF2')
+
+        Text(this.status === 'completed' ? '✓' : '今')
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#16A66A')
+      }
+
+      Column({ space: 3 }) {
+        Text('今日学习')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Text(this.totalCount > 0
+          ? `${this.completedCount}/${this.totalCount} 题 · 连续 ${this.streakDays} 天`
+          : '今天暂无到期任务')
+          .fontSize(11)
+          .fontColor('#64748B')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('>')
+        .fontSize(20)
+        .fontColor('#16A66A')
+    }
+    .width('100%')
+    .height(62)
+    .padding({ left: 14, right: 14 })
+    .backgroundColor('#F5FFFA')
+    .borderRadius(12)
+    .border({ width: 1, color: '#C8EEDB' })
+  }
+}
 
 @Entry
 @Component
 struct MainPage {
   @State nickname: string = '用户名';
+  @State todayCompletedCount: number = 0;
+  @State todayTotalCount: number = 0;
+  @State todayStreakDays: number = 0;
+  @State todayStatus: string = 'pending';
 
   aboutToAppear(): void {
     const params = router.getParams() as Record<string, string>;
@@ -24,6 +77,31 @@ struct MainPage {
     const currentUser = this.getCurrentUser();
     if (currentUser) {
       this.nickname = currentUser.nickname || currentUser.username;
+    }
+    this.loadTodaySummary();
+  }
+
+  onPageShow(): void {
+    this.loadTodaySummary();
+  }
+
+  private async loadTodaySummary(): Promise<void> {
+    const token = AppStorage.Get<string>('token') ?? '';
+    if (token.length === 0) {
+      return;
+    }
+    try {
+      const result = await getTodayReviewPlan(token);
+      if (result.success && result.data) {
+        const plan: TodayReviewPlanData = result.data;
+        this.todayCompletedCount = plan.completedCount;
+        this.todayTotalCount = plan.totalCount;
+        this.todayStreakDays = plan.streakDays;
+        this.todayStatus = plan.status;
+      }
+    } catch (error) {
+      this.todayCompletedCount = 0;
+      this.todayTotalCount = 0;
     }
   }
 
@@ -360,6 +438,18 @@ struct MainPage {
 
       Column() {
         this.TopBar()
+
+        TodayStudySummary({
+          completedCount: this.todayCompletedCount,
+          totalCount: this.todayTotalCount,
+          streakDays: this.todayStreakDays,
+          status: this.todayStatus
+        })
+          .margin({ left: 22, right: 22, top: 4 })
+          .onClick(() => {
+            this.goPage('pages/TodayStudyPage');
+          })
+
         this.WrongQuestionBookBar()
         this.FavoriteQuestionBar()
         this.KnowledgeBaseBar()

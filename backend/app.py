@@ -71,7 +71,7 @@ def to_diary_entry(row):
 
     return {
         "id": row["id"],
-        "entryDate": str(row.get("entry_date") or ""),
+        "entryDate": str(row.get("entry_date") or "")[:10],
         "moodScore": int(row.get("mood_score") or 0),
         "title": row.get("title") or "",
         "content": row.get("content") or "",
@@ -633,9 +633,13 @@ def update_diary_entry(entry_id):
     if not isinstance(tags, list):
         return fail("标签必须是数组")
 
-    result = DiaryService().update_entry(
-        entry_id, user["id"], entry_date, mood_score, title, content, tags
-    )
+    try:
+        result = DiaryService().update_entry(
+            entry_id, user["id"], entry_date, mood_score, title, content, tags
+        )
+    except ValueError as exc:
+        return fail(str(exc))
+
     if result is None:
         return fail("日记不存在或无权修改", 404)
     return success(result, "学习日记更新成功")

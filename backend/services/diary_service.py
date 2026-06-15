@@ -83,6 +83,18 @@ class DiaryService:
         with db_cursor(commit=True) as cursor:
             cursor.execute(
                 """
+                SELECT id
+                FROM diary_entries
+                WHERE user_id = %s AND entry_date = %s AND id <> %s
+                LIMIT 1
+                """,
+                (user_id, entry_date, entry_id),
+            )
+            if cursor.fetchone():
+                raise ValueError("该日期已有其他日记，请选择其他日期")
+
+            cursor.execute(
+                """
                 UPDATE diary_entries
                 SET entry_date = %s,
                     mood_score = %s,
@@ -123,9 +135,15 @@ class DiaryService:
             return cursor.rowcount > 0
 
     def to_entry(self, row):
+        entry_date = row.get("entry_date")
+        if entry_date is not None and hasattr(entry_date, "strftime"):
+            entry_date_text = entry_date.strftime("%Y-%m-%d")
+        else:
+            entry_date_text = str(entry_date or "")[:10]
+
         return {
             "id": row["id"],
-            "entryDate": str(row.get("entry_date") or ""),
+            "entryDate": entry_date_text,
             "title": row.get("title") or "",
             "moodScore": int(row.get("mood_score") or 0),
             "tags": self.parse_tags(row.get("tags")),

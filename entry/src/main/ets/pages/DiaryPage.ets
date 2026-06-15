@@ -19,6 +19,25 @@ interface DiaryEntry {
   content: string;
 }
 
+interface DiaryDateItem {
+  entryDate: string;
+  dayLabel: string;
+  entryId: number;
+}
+
+interface DiaryMonthGroup {
+  monthKey: string;
+  monthLabel: string;
+  dates: DiaryDateItem[];
+}
+
+interface DiaryYearGroup {
+  yearKey: string;
+  yearLabel: string;
+  showTopDivider: boolean;
+  months: DiaryMonthGroup[];
+}
+
 class DiaryEntryDataSource implements IDataSource {
   private listeners: DataChangeListener[] = [];
   private entries: DiaryEntry[] = [];
@@ -56,6 +75,8 @@ class DiaryEntryDataSource implements IDataSource {
 @Component
 struct DiaryPage {
   @State entryDate: string = '';
+  @State selectedDate: Date = new Date();
+  @State datePickerKey: number = 0;
   @State title: string = '';
   @State moodScore: number = 8;
   @State content: string = '';
@@ -90,9 +111,14 @@ struct DiaryPage {
   @State customTagInput: string = '';
   @State showCustomTagInput: boolean = false;
   @State searchKeyword: string = '';
+  @State showCalendar: boolean = false;
+  @State calendarSidebarOffset: number = 80;
+  @State calendarMaskOpacity: number = 0;
+  @State highlightEntryId: number = 0;
 
   private allEntries: DiaryEntry[] = [];
   private diarySource: DiaryEntryDataSource = new DiaryEntryDataSource();
+  private listScroller: Scroller = new Scroller();
   private tagOptions: string[] = [
     '软件工程',
     '数据库',
@@ -106,6 +132,7 @@ struct DiaryPage {
     if (this.entryDate.length === 0) {
       this.entryDate = this.todayText();
     }
+    this.selectedDate = this.parseDateText(this.entryDate);
     this.loadHistory(false);
   }
 
@@ -118,8 +145,62 @@ struct DiaryPage {
     return `${now.getFullYear()}-${this.pad2(now.getMonth() + 1)}-${this.pad2(now.getDate())}`;
   }
 
+  private todayDateOnly(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
   private pad2(value: number): string {
     return value < 10 ? `0${value}` : `${value}`;
+  }
+
+  private formatDateText(date: Date): string {
+    return `${date.getFullYear()}-${this.pad2(date.getMonth() + 1)}-${this.pad2(date.getDate())}`;
+  }
+
+  private normalizeDateText(dateText: string): string {
+    const trimmed = dateText.trim();
+    if (trimmed.length === 0) {
+      return '';
+    }
+    const parts = trimmed.split('-');
+    if (parts.length < 3) {
+      return trimmed;
+    }
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      return trimmed;
+    }
+    return `${year}-${this.pad2(month)}-${this.pad2(day)}`;
+  }
+
+  private parseDateText(dateText: string): Date {
+    const normalized = this.normalizeDateText(dateText);
+    const parts = normalized.split('-');
+    if (parts.length >= 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    return this.todayDateOnly();
+  }
+
+  private syncFormDate(dateText: string): void {
+    const normalized = this.normalizeDateText(dateText);
+    this.entryDate = normalized;
+    this.selectedDate = this.parseDateText(normalized);
+    this.datePickerKey++;
+  }
+
+  private onDatePickerChange(value: Date): void {
+    const today = this.todayDateOnly();
+    const picked = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    const finalDate = picked.getTime() > today.getTime() ? today : picked;
+    this.selectedDate = finalDate;
+    this.entryDate = this.formatDateText(finalDate);
   }
 
   private showFormMessage(message: string, success: boolean): void {
@@ -140,7 +221,7 @@ struct DiaryPage {
   }
 
   private resetForm(): void {
-    this.entryDate = this.todayText();
+    this.syncFormDate(this.todayText());
     this.title = '';
     this.moodScore = 8;
     this.content = '';
@@ -151,6 +232,11 @@ struct DiaryPage {
     this.showCustomTagInput = false;
   }
 
+  private closeForm(): void {
+    this.showForm = false;
+    this.resetForm();
+  }
+
   private openCreateForm(): void {
     this.resetForm();
     this.showForm = true;
@@ -158,7 +244,7 @@ struct DiaryPage {
 
   private openDetail(entry: DiaryEntry): void {
     this.detailId = entry.id;
-    this.detailDate = entry.entryDate;
+    this.detailDate = this.normalizeDateText(entry.entryDate);
     this.detailTitle = entry.title;
     this.detailMoodScore = entry.moodScore;
     this.detailTags = [...entry.tags];
@@ -168,7 +254,7 @@ struct DiaryPage {
 
   private fillFormFromDetail(): void {
     this.editingId = this.detailId;
-    this.entryDate = this.detailDate;
+    this.syncFormDate(this.detailDate);
     this.title = this.detailTitle;
     this.moodScore = this.detailMoodScore;
     this.selectedTags = [...this.detailTags];
@@ -228,10 +314,20 @@ struct DiaryPage {
       if (!result.success) {
         throw new Error(result.message || '历史日记加载失败');
       }
-      const entries: DiaryEntry[] = result.data ?? [];
-      const sortedEntries = entries.sort((left: DiaryEntry, right: DiaryEntry) => {
-        return right.entryDate.localeCompare(left.entryDate);
+      const rawEntries: DiaryEntry[] = result.data ?? [];
+      const entries: DiaryEntry[] = [];
+      rawEntries.forEach((item: DiaryEntry) => {
+        const entry: DiaryEntry = {
+          id: item.id,
+          entryDate: this.normalizeDateText(item.entryDate),
+          title: item.title,
+          moodScore: item.moodScore,
+          tags: item.tags,
+          content: item.content
+        };
+        entries.push(entry);
       });
+      const sortedEntries = this.sortEntries(entries);
       this.allEntries = sortedEntries;
       this.filterEntries();
       this.historyMessage = '';
@@ -261,6 +357,14 @@ struct DiaryPage {
       return;
     }
 
+    const normalizedDate = this.formatDateText(this.selectedDate);
+    this.entryDate = normalizedDate;
+
+    if (normalizedDate > this.todayText()) {
+      this.showFormMessage('日期不能晚于今天', false);
+      return;
+    }
+
     if (this.title.trim().length === 0) {
       this.showFormMessage('请填写日记标题', false);
       return;
@@ -281,7 +385,7 @@ struct DiaryPage {
         result = await updateStudyDiary(
           token,
           this.editingId,
-          this.entryDate.trim(),
+          normalizedDate,
           Math.round(this.moodScore),
           this.title.trim(),
           this.content.trim(),
@@ -290,7 +394,7 @@ struct DiaryPage {
       } else {
         result = await saveStudyDiary(
           token,
-          this.entryDate.trim(),
+          normalizedDate,
           Math.round(this.moodScore),
           this.title.trim(),
           this.content.trim(),
@@ -299,8 +403,10 @@ struct DiaryPage {
       }
 
       if (result.success) {
-        this.showForm = false;
-        this.resetForm();
+        if (result.data) {
+          this.mergeSavedEntry(result.data);
+        }
+        this.closeForm();
         await this.loadHistory(false);
         return;
       }
@@ -379,14 +485,269 @@ struct DiaryPage {
     if (keyword.length === 0) {
       this.diarySource.setEntries(this.allEntries);
       this.historyCount = this.allEntries.length;
+    } else {
+      const filtered = this.allEntries.filter((entry: DiaryEntry) => {
+        return entry.title.toLowerCase().indexOf(keyword) >= 0;
+      });
+      this.diarySource.setEntries(filtered);
+      this.historyCount = filtered.length;
+    }
+    this.listVersion++;
+  }
+
+  private sortEntries(entries: DiaryEntry[]): DiaryEntry[] {
+    return entries.sort((left: DiaryEntry, right: DiaryEntry) => {
+      return right.entryDate.localeCompare(left.entryDate);
+    });
+  }
+
+  private mergeSavedEntry(data: StudyDiarySaveData): void {
+    const savedEntry: DiaryEntry = {
+      id: data.id,
+      entryDate: this.normalizeDateText(data.entryDate),
+      title: data.title,
+      moodScore: data.moodScore,
+      tags: data.tags,
+      content: data.content
+    };
+
+    const nextEntries: DiaryEntry[] = [];
+    let replaced = false;
+    this.allEntries.forEach((entry: DiaryEntry) => {
+      if (entry.id === savedEntry.id) {
+        nextEntries.push(savedEntry);
+        replaced = true;
+        return;
+      }
+      nextEntries.push(entry);
+    });
+    if (!replaced) {
+      nextEntries.push(savedEntry);
+    }
+    this.allEntries = this.sortEntries(nextEntries);
+    this.filterEntries();
+  }
+
+  private buildMonthGroups(): DiaryMonthGroup[] {
+    const monthMap: Map<string, DiaryDateItem[]> = new Map();
+    const monthOrder: string[] = [];
+
+    this.allEntries.forEach((entry: DiaryEntry) => {
+      const parts = entry.entryDate.split('-');
+      if (parts.length < 3) {
+        return;
+      }
+      const monthKey = `${parts[0]}-${parts[1]}`;
+      const dayLabel = `${parseInt(parts[2], 10)}`;
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, []);
+        monthOrder.push(monthKey);
+      }
+      const dateItem: DiaryDateItem = {
+        entryDate: entry.entryDate,
+        dayLabel: dayLabel,
+        entryId: entry.id
+      };
+      monthMap.get(monthKey)?.push(dateItem);
+    });
+
+    const groups: DiaryMonthGroup[] = [];
+    monthOrder.forEach((monthKey: string) => {
+      const monthNum = parseInt(monthKey.split('-')[1], 10);
+      const group: DiaryMonthGroup = {
+        monthKey: monthKey,
+        monthLabel: `${monthNum}月`,
+        dates: monthMap.get(monthKey) ?? []
+      };
+      groups.push(group);
+    });
+    return groups;
+  }
+
+  private buildYearGroups(): DiaryYearGroup[] {
+    const monthGroups = this.buildMonthGroups();
+    const yearMap: Map<string, DiaryMonthGroup[]> = new Map();
+    const yearOrder: string[] = [];
+
+    monthGroups.forEach((group: DiaryMonthGroup) => {
+      const yearKey = group.monthKey.split('-')[0];
+      if (!yearMap.has(yearKey)) {
+        yearMap.set(yearKey, []);
+        yearOrder.push(yearKey);
+      }
+      yearMap.get(yearKey)?.push(group);
+    });
+
+    const yearGroups: DiaryYearGroup[] = [];
+    for (let index = 0; index < yearOrder.length; index++) {
+      const yearKey = yearOrder[index];
+      const yearGroup: DiaryYearGroup = {
+        yearKey: yearKey,
+        yearLabel: `${yearKey}年`,
+        showTopDivider: index > 0,
+        months: yearMap.get(yearKey) ?? []
+      };
+      yearGroups.push(yearGroup);
+    }
+    return yearGroups;
+  }
+
+  private openCalendarSidebar(): void {
+    this.showCalendar = true;
+    animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
+      this.calendarSidebarOffset = 0;
+      this.calendarMaskOpacity = 1;
+    });
+  }
+
+  private hideCalendarSidebar(): void {
+    animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
+      this.calendarSidebarOffset = 80;
+      this.calendarMaskOpacity = 0;
+    });
+    setTimeout(() => {
+      this.showCalendar = false;
+    }, 220);
+  }
+
+  private scrollToEntryDate(entryDate: string): void {
+    this.hideCalendarSidebar();
+
+    if (this.searchKeyword.trim().length > 0) {
+      this.searchKeyword = '';
+      this.filterEntries();
+    }
+
+    const index = this.allEntries.findIndex((entry: DiaryEntry) => entry.entryDate === entryDate);
+    if (index < 0) {
       return;
     }
-    const filtered = this.allEntries.filter((entry: DiaryEntry) => {
-      return entry.title.toLowerCase().indexOf(keyword) >= 0;
-    });
-    this.diarySource.setEntries(filtered);
-    this.historyCount = filtered.length;
-    this.listVersion++;
+
+    const targetEntry = this.allEntries[index];
+    this.highlightEntryId = targetEntry.id;
+
+    setTimeout(() => {
+      this.listScroller.scrollToIndex(index, false, ScrollAlign.START);
+    }, 80);
+
+    setTimeout(() => {
+      if (this.highlightEntryId === targetEntry.id) {
+        this.highlightEntryId = 0;
+      }
+    }, 2000);
+  }
+
+  @Builder
+  CalendarDateChip(dateItem: DiaryDateItem) {
+    Text(`${dateItem.dayLabel}日`)
+      .fontSize(13)
+      .fontColor('#7152D1')
+      .padding({ left: 8, top: 4, bottom: 4 })
+      .borderRadius(6)
+      .backgroundColor('#F3F0FF')
+      .onClick(() => {
+        this.scrollToEntryDate(dateItem.entryDate);
+      })
+  }
+
+  @Builder
+  CalendarMonthGroup(group: DiaryMonthGroup) {
+    Column({ space: 4 }) {
+      Text(group.monthLabel)
+        .fontSize(13)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#0B1B44')
+        .padding({ left: 4 })
+
+      Column({ space: 2 }) {
+        ForEach(group.dates, (dateItem: DiaryDateItem) => {
+          this.CalendarDateChip(dateItem)
+        }, (dateItem: DiaryDateItem) => `${group.monthKey}-${dateItem.entryDate}`)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: 6 })
+      .border({ width: { left: 1 }, color: '#E5DEFF' })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  CalendarYearGroup(yearGroup: DiaryYearGroup) {
+    Column({ space: 8 }) {
+      if (yearGroup.showTopDivider) {
+        Divider()
+          .color('#E5DEFF')
+          .width('72%')
+          .margin({ top: 2, bottom: 2 })
+      }
+
+      Text(yearGroup.yearLabel)
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#0B1B44')
+        .width('100%')
+        .padding({ left: 4, top: 2, bottom: 2 })
+
+      Column({ space: 10 }) {
+        ForEach(yearGroup.months, (group: DiaryMonthGroup) => {
+          this.CalendarMonthGroup(group)
+        }, (group: DiaryMonthGroup) => group.monthKey)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  CalendarPanel() {
+    Column({ space: 0 }) {
+      Row() {
+        Blank()
+
+        Text('✕')
+          .fontSize(16)
+          .fontColor('#9CA3AF')
+          .onClick(() => {
+            this.hideCalendarSidebar();
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, right: 10, bottom: 6 })
+
+      if (this.allEntries.length === 0) {
+        Column() {
+          Text('暂无')
+            .fontSize(13)
+            .fontColor('#7B8497')
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Scroll() {
+          Column({ space: 16 }) {
+            ForEach(this.buildYearGroups(), (yearGroup: DiaryYearGroup) => {
+              this.CalendarYearGroup(yearGroup)
+            }, (yearGroup: DiaryYearGroup) => yearGroup.yearKey)
+          }
+          .width('100%')
+          .constraintSize({ minHeight: '100%' })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: 10, right: 10, bottom: 14 })
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .scrollBar(BarState.Off)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -469,8 +830,11 @@ struct DiaryPage {
     .width('100%')
     .padding(16)
     .borderRadius(8)
-    .backgroundColor('#FFFFFF')
-    .border({ width: 1, color: '#EEF2F7' })
+    .backgroundColor(this.highlightEntryId === entry.id ? '#F8F5FF' : '#FFFFFF')
+    .border({
+      width: this.highlightEntryId === entry.id ? 2 : 1,
+      color: this.highlightEntryId === entry.id ? '#8B67FF' : '#EEF2F7'
+    })
     .onClick(() => {
       this.openDetail(entry);
     })
@@ -564,7 +928,7 @@ struct DiaryPage {
       if (!this.historyLoading && this.historyCount === 0) {
         this.EmptyHistory()
       } else {
-        List({ space: 12 }) {
+        List({ space: 12, scroller: this.listScroller }) {
           LazyForEach(this.diarySource, (entry: DiaryEntry) => {
             ListItem() {
               this.DiaryHistoryCard(entry)
@@ -863,7 +1227,7 @@ struct DiaryPage {
             .borderRadius(15)
             .padding({ left: 12, right: 12 })
             .onClick(() => {
-              this.resetForm();
+              this.closeForm();
             })
         }
       }
@@ -877,15 +1241,24 @@ struct DiaryPage {
 
       Column({ space: 8 }) {
         this.FieldLabel('日期')
-        TextInput({ placeholder: 'YYYY-MM-DD', text: this.entryDate })
-          .height(46)
-          .fontSize(16)
-          .fontColor('#0B1B44')
+        Text(this.entryDate)
+          .width('100%')
+          .fontSize(14)
+          .fontColor('#8A96AD')
+          .textAlign(TextAlign.Center)
+
+        DatePicker({
+          start: new Date('2010-1-1'),
+          end: this.todayDateOnly(),
+          selected: this.selectedDate
+        })
+          .key(`diary-date-${this.datePickerKey}`)
+          .width('100%')
+          .height(160)
           .backgroundColor('#F6F8FC')
           .borderRadius(8)
-          .padding({ left: 12, right: 12 })
-          .onChange((value: string) => {
-            this.entryDate = value;
+          .onDateChange((value: Date) => {
+            this.onDatePickerChange(value);
           })
       }
       .width('100%')
@@ -1104,7 +1477,7 @@ struct DiaryPage {
           .backgroundColor('#F3F0FF')
           .fontColor('#8B67FF')
           .onClick(() => {
-            this.showForm = false;
+            this.closeForm();
           })
       }
       .width('100%')
@@ -1124,10 +1497,27 @@ struct DiaryPage {
   build() {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
-        FeaturePageHeader({
-          title: '学习日记',
-          themeColor: '#8B67FF'
-        })
+        Stack({ alignContent: Alignment.TopEnd }) {
+          FeaturePageHeader({
+            title: '学习日记',
+            themeColor: '#8B67FF'
+          })
+
+          Button() {
+            Text('📅')
+              .fontSize(18)
+          }
+          .width(38)
+          .height(38)
+          .type(ButtonType.Normal)
+          .borderRadius(19)
+          .backgroundColor('#F3F0FF')
+          .margin({ top: 10, right: 18 })
+          .onClick(() => {
+            this.openCalendarSidebar();
+          })
+        }
+        .width('100%')
 
         Stack({ alignContent: Alignment.BottomEnd }) {
           Refresh({ refreshing: $$this.refreshing }) {
@@ -1194,7 +1584,7 @@ struct DiaryPage {
           .height('100%')
           .backgroundColor('#66000000')
           .onClick(() => {
-            this.showForm = false;
+            this.closeForm();
           })
 
         Scroll() {
@@ -1215,6 +1605,39 @@ struct DiaryPage {
           })
 
         this.PolishComparePanel()
+      }
+
+      if (this.showCalendar) {
+        Row() {
+          Column()
+            .layoutWeight(1)
+            .height('100%')
+            .backgroundColor('#00000055')
+            .opacity(this.calendarMaskOpacity)
+            .animation({ duration: 220, curve: Curve.EaseOut })
+            .onClick(() => {
+              this.hideCalendarSidebar();
+            })
+
+          Column() {
+            this.CalendarPanel()
+          }
+          .width(80)
+          .height('100%')
+          .backgroundColor('#D9FFFFFF')
+          .translate({ x: this.calendarSidebarOffset, y: 0 })
+          .animation({ duration: 260, curve: Curve.EaseOut })
+          .border({ width: { left: 1 }, color: '#E5DEFF' })
+          .shadow({
+            radius: 16,
+            color: '#22000000',
+            offsetX: -4,
+            offsetY: 0
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Top)
       }
     }
     .width('100%')

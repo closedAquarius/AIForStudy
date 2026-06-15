@@ -86,7 +86,8 @@ def _load_question_pool(cursor, bank_id, user_id):
         """
         SELECT
           q.id, q.type, q.stem, q.analysis, q.difficulty, q.score, q.knowledge_point,
-          latest.is_correct AS latest_is_correct
+          latest.is_correct AS latest_is_correct,
+          uqr.is_favorite, uqr.note AS personal_note
         FROM questions q
         LEFT JOIN (
           SELECT pa.question_id, pa.is_correct
@@ -98,11 +99,14 @@ def _load_question_pool(cursor, bank_id, user_id):
             GROUP BY question_id
           ) last_pa ON last_pa.latest_id = pa.id
         ) latest ON latest.question_id = q.id
+        LEFT JOIN user_question_records uqr
+          ON uqr.question_id = q.id
+         AND uqr.user_id = %s
         WHERE q.question_bank_id=%s
           AND q.status='active'
         ORDER BY q.id ASC
         """,
-        (user_id, bank_id),
+        (user_id, user_id, bank_id),
     )
     return cursor.fetchall()
 
@@ -216,6 +220,8 @@ def _serialize_question(row, seq, options_map, include_answer=False, answers_map
         "knowledgePoint": row.get("knowledge_point") or "",
         "practiceStatus": _row_status(row),
         "practiceStatusLabel": _status_label(_row_status(row)),
+        "isFavorite": int(row.get("is_favorite") or 0),
+        "personalNote": row.get("personal_note") or "",
         "options": options_map.get(qid, []),
     }
     if include_answer and answers_map is not None:
@@ -235,7 +241,8 @@ def _fetch_session_questions(cursor, session, include_answer=False):
         f"""
         SELECT
           q.id, q.type, q.stem, q.analysis, q.difficulty, q.score, q.knowledge_point,
-          latest.is_correct AS latest_is_correct
+          latest.is_correct AS latest_is_correct,
+          uqr.is_favorite, uqr.note AS personal_note
         FROM questions q
         LEFT JOIN (
           SELECT pa.question_id, pa.is_correct
@@ -247,9 +254,12 @@ def _fetch_session_questions(cursor, session, include_answer=False):
             GROUP BY question_id
           ) last_pa ON last_pa.latest_id = pa.id
         ) latest ON latest.question_id = q.id
+        LEFT JOIN user_question_records uqr
+          ON uqr.question_id = q.id
+         AND uqr.user_id = %s
         WHERE q.id IN ({placeholders})
         """,
-        tuple([session["user_id"]] + question_ids),
+        tuple([session["user_id"], session["user_id"]] + question_ids),
     )
     rows_by_id = {row["id"]: row for row in cursor.fetchall()}
     options_map, answers_map = _load_options_and_answers(cursor, question_ids)

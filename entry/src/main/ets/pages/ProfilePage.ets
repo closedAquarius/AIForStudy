@@ -9,6 +9,34 @@ import {
   getProfileOverview
 } from '../common/ApiClient';
 
+@Component
+struct ProfileStatItem {
+  @Prop value: string = '';
+  @Prop label: string = '';
+  @Prop color: string = '#2D75FF';
+
+  build() {
+    Column({ space: 5 }) {
+      Text(this.value)
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.color)
+        .maxLines(1)
+
+      Text(this.label)
+        .fontSize(11)
+        .fontColor('#64748B')
+        .maxLines(1)
+    }
+    .layoutWeight(1)
+    .height(76)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 1, color: '#E5EAF3' })
+  }
+}
+
 @Entry
 @Component
 struct ProfilePage {
@@ -18,6 +46,7 @@ struct ProfilePage {
   @State role: string = 'student';
   @State avatarUrl: string = 'ailearning_icon.png';
   @State loading: boolean = false;
+  @State overviewVersion: number = 0;
   @State errorMessage: string = '';
   @State showEditDialog: boolean = false;
   @State savingProfile: boolean = false;
@@ -47,8 +76,32 @@ struct ProfilePage {
   @State aiConversationCount: number = 0;
   @State recentActivity: ProfileActivityItem[] = [];
   @State evaluation: string = '完成练习后，这里会生成学习评价。';
+  @State overviewData: ProfileOverviewData = {
+    totalAnswers: 0,
+    correctAnswers: 0,
+    wrongAnswers: 0,
+    currentWrongCount: 0,
+    accuracyRate: 0,
+    sessionCount: 0,
+    studyMinutes: 0,
+    diaryCount: 0,
+    averageMood: 0,
+    ownedBankCount: 0,
+    availableBankCount: 0,
+    ownedQuestionCount: 0,
+    aiGeneratedQuestionCount: 0,
+    documentCount: 0,
+    aiConversationCount: 0,
+    recentActivity: [],
+    evaluation: '完成练习后，这里会生成学习评价。'
+  };
 
   aboutToAppear(): void {
+    this.loadUser();
+    this.loadOverview();
+  }
+
+  onPageShow(): void {
     this.loadUser();
     this.loadOverview();
   }
@@ -80,6 +133,10 @@ struct ProfilePage {
   }
 
   private async loadOverview(): Promise<void> {
+    if (this.loading) {
+      return;
+    }
+
     const token = AppStorage.Get<string>('token') ?? '';
     if (token.length === 0) {
       this.errorMessage = '登录信息已失效，请重新登录。';
@@ -103,22 +160,44 @@ struct ProfilePage {
   }
 
   private applyOverview(data: ProfileOverviewData): void {
-    this.totalAnswers = data.totalAnswers;
-    this.correctAnswers = data.correctAnswers;
-    this.currentWrongCount = data.currentWrongCount;
-    this.accuracyRate = data.accuracyRate;
-    this.sessionCount = data.sessionCount;
-    this.studyMinutes = data.studyMinutes;
-    this.diaryCount = data.diaryCount;
-    this.averageMood = data.averageMood;
-    this.ownedBankCount = data.ownedBankCount;
-    this.availableBankCount = data.availableBankCount;
-    this.ownedQuestionCount = data.ownedQuestionCount;
-    this.aiGeneratedQuestionCount = data.aiGeneratedQuestionCount;
-    this.documentCount = data.documentCount;
-    this.aiConversationCount = data.aiConversationCount;
-    this.recentActivity = data.recentActivity;
-    this.evaluation = data.evaluation;
+    const nextData: ProfileOverviewData = {
+      totalAnswers: Number(data.totalAnswers ?? 0),
+      correctAnswers: Number(data.correctAnswers ?? 0),
+      wrongAnswers: Number(data.wrongAnswers ?? 0),
+      currentWrongCount: Number(data.currentWrongCount ?? 0),
+      accuracyRate: Number(data.accuracyRate ?? 0),
+      sessionCount: Number(data.sessionCount ?? 0),
+      studyMinutes: Number(data.studyMinutes ?? 0),
+      diaryCount: Number(data.diaryCount ?? 0),
+      averageMood: Number(data.averageMood ?? 0),
+      ownedBankCount: Number(data.ownedBankCount ?? 0),
+      availableBankCount: Number(data.availableBankCount ?? 0),
+      ownedQuestionCount: Number(data.ownedQuestionCount ?? 0),
+      aiGeneratedQuestionCount: Number(data.aiGeneratedQuestionCount ?? 0),
+      documentCount: Number(data.documentCount ?? 0),
+      aiConversationCount: Number(data.aiConversationCount ?? 0),
+      recentActivity: data.recentActivity ?? [],
+      evaluation: data.evaluation || '完成练习后，这里会生成学习评价。'
+    };
+    this.overviewData = nextData;
+
+    this.totalAnswers = nextData.totalAnswers;
+    this.correctAnswers = nextData.correctAnswers;
+    this.currentWrongCount = nextData.currentWrongCount;
+    this.accuracyRate = nextData.accuracyRate;
+    this.sessionCount = nextData.sessionCount;
+    this.studyMinutes = nextData.studyMinutes;
+    this.diaryCount = nextData.diaryCount;
+    this.averageMood = nextData.averageMood;
+    this.ownedBankCount = nextData.ownedBankCount;
+    this.availableBankCount = nextData.availableBankCount;
+    this.ownedQuestionCount = nextData.ownedQuestionCount;
+    this.aiGeneratedQuestionCount = nextData.aiGeneratedQuestionCount;
+    this.documentCount = nextData.documentCount;
+    this.aiConversationCount = nextData.aiConversationCount;
+    this.recentActivity = nextData.recentActivity;
+    this.evaluation = nextData.evaluation;
+    this.overviewVersion += 1;
   }
 
   private roleText(): string {
@@ -313,28 +392,6 @@ struct ProfilePage {
   }
 
   @Builder
-  StatItem(value: string, label: string, color: string) {
-    Column({ space: 5 }) {
-      Text(value)
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(color)
-        .maxLines(1)
-
-      Text(label)
-        .fontSize(11)
-        .fontColor('#64748B')
-        .maxLines(1)
-    }
-    .layoutWeight(1)
-    .height(76)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(8)
-    .border({ width: 1, color: '#E5EAF3' })
-  }
-
-  @Builder
   AccuracySection() {
     Column({ space: 12 }) {
       Row() {
@@ -438,7 +495,7 @@ struct ProfilePage {
   }
 
   @Builder
-  LearningAssetsSection() {
+  LearningAssetsSection(version: number) {
     Column({ space: 10 }) {
       Text('学习资产')
         .width('100%')
@@ -447,20 +504,20 @@ struct ProfilePage {
         .fontColor('#0B1B44')
 
       Row({ space: 10 }) {
-        this.StatItem(`${this.ownedBankCount}`, '我的题库', '#2D75FF')
-        this.StatItem(`${this.availableBankCount}`, '可用题库', '#16A66A')
+        ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF' })
+        ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A' })
       }
       .width('100%')
 
       Row({ space: 10 }) {
-        this.StatItem(`${this.ownedQuestionCount}`, '题库题目', '#7C5CE7')
-        this.StatItem(`${this.aiGeneratedQuestionCount}`, 'AI 生成题', '#EC7A3D')
+        ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7' })
+        ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D' })
       }
       .width('100%')
 
       Row({ space: 10 }) {
-        this.StatItem(`${this.documentCount}`, '上传资料', '#0EA5A5')
-        this.StatItem(`${this.aiConversationCount}`, 'AI 会话', '#E05252')
+        ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5' })
+        ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252' })
       }
       .width('100%')
     }
@@ -469,6 +526,21 @@ struct ProfilePage {
     .backgroundColor('#F8FAFD')
     .borderRadius(8)
     .border({ width: 1, color: '#DCE4F0' })
+    .id(`learning-assets-${version}`)
+  }
+
+  @Builder
+  DiaryStatsSection(version: number) {
+    Row({ space: 10 }) {
+      ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7' })
+      ProfileStatItem({
+        value: this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
+        label: '平均心情',
+        color: '#EC7A3D'
+      })
+    }
+    .width('100%')
+    .id(`diary-stats-${version}`)
   }
 
   @Builder
@@ -780,6 +852,34 @@ struct ProfilePage {
             this.openEditDialog();
           })
 
+          Button('查看我的错题本')
+            .width('100%')
+            .height(44)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#EF4444')
+            .backgroundColor('#FFF1F2')
+            .borderRadius(8)
+            .onClick(() => {
+              router.pushUrl({
+                url: 'pages/WrongQuestionBookPage'
+              });
+            })
+
+          Button('查看我的收藏')
+            .width('100%')
+            .height(44)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#B45309')
+            .backgroundColor('#FFF7E6')
+            .borderRadius(8)
+            .onClick(() => {
+              router.pushUrl({
+                url: 'pages/FavoriteQuestionPage'
+              });
+            })
+
           if (this.loading) {
             Text('正在加载学习数据...')
               .width('100%')
@@ -797,24 +897,58 @@ struct ProfilePage {
           }
 
           Row({ space: 10 }) {
-            this.StatItem(`${this.totalAnswers}`, '累计答题', '#2D75FF')
-            this.StatItem(`${this.currentWrongCount}`, '当前错题', '#E05252')
+            ProfileStatItem({ value: `${this.totalAnswers}`, label: '累计答题', color: '#2D75FF' })
+            ProfileStatItem({ value: `${this.currentWrongCount}`, label: '当前错题', color: '#E05252' })
           }
           .width('100%')
 
           Row({ space: 10 }) {
-            this.StatItem(`${this.sessionCount}`, '练习次数', '#16A66A')
-            this.StatItem(this.studyTimeText(), '学习时长', '#F59E0B')
+            ProfileStatItem({ value: `${this.sessionCount}`, label: '练习次数', color: '#16A66A' })
+            ProfileStatItem({ value: this.studyTimeText(), label: '学习时长', color: '#F59E0B' })
           }
           .width('100%')
 
           this.AccuracySection()
           this.ActivitySection()
-          this.LearningAssetsSection()
+
+          Column({ space: 10 }) {
+            Text('学习资产')
+              .width('100%')
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#0B1B44')
+
+            Row({ space: 10 }) {
+              ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF' })
+              ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A' })
+            }
+            .width('100%')
+
+            Row({ space: 10 }) {
+              ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7' })
+              ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D' })
+            }
+            .width('100%')
+
+            Row({ space: 10 }) {
+              ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5' })
+              ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252' })
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .padding(16)
+          .backgroundColor('#F8FAFD')
+          .borderRadius(8)
+          .border({ width: 1, color: '#DCE4F0' })
 
           Row({ space: 10 }) {
-            this.StatItem(`${this.diaryCount}`, '日记天数', '#7C5CE7')
-            this.StatItem(this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--', '平均心情', '#EC7A3D')
+            ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7' })
+            ProfileStatItem({
+              value: this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
+              label: '平均心情',
+              color: '#EC7A3D'
+            })
           }
           .width('100%')
 

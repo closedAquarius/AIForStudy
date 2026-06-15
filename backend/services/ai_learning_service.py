@@ -187,7 +187,7 @@ class AiLearningService:
                   qb.name AS bank_name,
                   GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ',') AS tag_names,
                   last_pa.is_correct AS latest_is_correct,
-                  last_pa.answer_text AS latest_answer_text
+                  last_pa.user_answer AS latest_answer_text
                 FROM questions q
                 JOIN question_banks qb ON qb.id = q.question_bank_id
                 LEFT JOIN question_tags qt ON qt.question_id = q.id
@@ -202,7 +202,7 @@ class AiLearningService:
                 )
                 WHERE q.id = %s
                 GROUP BY q.id, q.question_bank_id, q.type, q.stem, q.analysis, q.difficulty,
-                         q.score, q.knowledge_point, qb.name, last_pa.is_correct, last_pa.answer_text
+                         q.score, q.knowledge_point, qb.name, last_pa.is_correct, last_pa.user_answer
                 LIMIT 1
                 """,
                 (user_id, question_id),
@@ -434,7 +434,7 @@ class AiLearningService:
                   q.score,
                   q.knowledge_point,
                   GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ',') AS tag_names,
-                  last_pa.answer_text AS latest_answer_text,
+                  last_pa.user_answer AS latest_answer_text,
                   last_pa.is_correct AS latest_is_correct
                 FROM questions q
                 LEFT JOIN question_tags qt ON qt.question_id = q.id
@@ -449,7 +449,7 @@ class AiLearningService:
                 )
                 WHERE q.id = %s
                 GROUP BY q.id, q.type, q.stem, q.analysis, q.difficulty, q.score, q.knowledge_point,
-                         last_pa.answer_text, last_pa.is_correct
+                         last_pa.user_answer, last_pa.is_correct
                 LIMIT 1
                 """,
                 (user_id, related_question_id),
@@ -591,6 +591,9 @@ class AiLearningService:
         if not isinstance(content, str):
             content = str(message)
         return content.strip()
+
+    def generate_answer(self, messages: list[dict[str, str]]) -> str:
+        return self._call_zhipu(messages)
 
 
 def secure_name(name: str) -> str:

@@ -497,6 +497,24 @@ AI 生成试卷表，保存 AI 出卷记录。
 - `user_id` 外键关联 `users.id`。
 - `question_id` 外键关联 `questions.id`。
 
+### 7.3 user_question_records
+
+用户题目个性化记录表，用于保存每个用户自己的收藏状态和题目笔记。
+
+关键字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED | 记录主键 |
+| user_id | BIGINT UNSIGNED | 用户 ID |
+| question_id | BIGINT UNSIGNED | 题目 ID |
+| is_favorite | TINYINT(1) | 是否收藏 |
+| note | TEXT | 用户题目笔记 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+`user_id + question_id` 使用唯一索引，保证同一用户对同一道题只有一条个性化记录。
+
 ## 8. 日记与 AI 分析相关表
 
 ### 8.1 diary_entries
@@ -673,32 +691,85 @@ AI 对话消息表，保存一次对话中的每条消息。
 - `conversation_id` 外键关联 `ai_conversations.id`。
 - `related_question_id` 外键关联 `questions.id`。
 
-## 11. 初始数据说明
+## 11. 文档知识库相关表
+
+### 11.1 knowledge_bases
+
+知识库主表。每个用户可以按课程或专题创建多个知识库。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED | 知识库主键 |
+| owner_user_id | BIGINT UNSIGNED | 所属用户 |
+| name | VARCHAR(120) | 知识库名称 |
+| description | VARCHAR(500) | 知识库描述 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+### 11.2 knowledge_base_documents
+
+知识库与 `documents` 的关联表。一个知识库可以包含多份文档，一份文档也可以扩展为被多个知识库引用。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| knowledge_base_id | BIGINT UNSIGNED | 知识库 ID |
+| document_id | BIGINT UNSIGNED | 文档 ID |
+| created_at | DATETIME | 加入时间 |
+
+### 11.3 document_chunks
+
+文档片段表。上传的文档解析为文本后，会按长度和段落拆分，用于检索相关资料。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED | 片段主键 |
+| document_id | BIGINT UNSIGNED | 来源文档 |
+| chunk_index | INT UNSIGNED | 文档内片段序号 |
+| content | TEXT | 片段原文 |
+| char_start | INT UNSIGNED | 原文起始位置 |
+| char_end | INT UNSIGNED | 原文结束位置 |
+| metadata | JSON | 来源页码等扩展信息 |
+
+### 11.4 knowledge_queries
+
+知识库问答记录表，保存问题、AI 回答以及回答使用的资料来源。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED | 问答记录主键 |
+| knowledge_base_id | BIGINT UNSIGNED | 知识库 ID |
+| user_id | BIGINT UNSIGNED | 提问用户 |
+| question | TEXT | 用户问题 |
+| answer | LONGTEXT | AI 回答 |
+| sources | JSON | 命中文档和片段信息 |
+| created_at | DATETIME | 提问时间 |
+
+## 12. 初始数据说明
 
 `schema.sql` 中包含一些演示数据，方便启动项目后立即测试。
 
-### 11.1 初始用户
+### 12.1 初始用户
 
 | 用户名 | 密码 | 昵称 | 角色 |
 | --- | --- | --- | --- |
 | student1 | 123456 | 演示学生 | student |
 | teacher1 | 123456 | 演示老师 | teacher |
 
-### 11.2 初始学科
+### 12.2 初始学科
 
 | 学科 | 阶段 | 说明 |
 | --- | --- | --- |
 | 数学 | high_school | 高中数学基础与提升 |
 | 英语 | high_school | 高中英语词汇、阅读与语法 |
 
-### 11.3 初始题库
+### 12.3 初始题库
 
 | 题库 | 学科 | 来源 |
 | --- | --- | --- |
 | 高中数学函数基础 | 数学 | manual |
 | 英语语法选择题 | 英语 | manual |
 
-### 11.4 初始题目
+### 12.4 初始题目
 
 包含以下示例题：
 
@@ -706,19 +777,19 @@ AI 对话消息表，保存一次对话中的每条消息。
 - 偶函数性质判断题。
 - 英语一般现在时单选题。
 
-### 11.5 初始统计和日记
+### 12.5 初始统计和日记
 
 包含一条演示学习日记，以及两条学习统计数据：
 
 - `practice_count`
 - `accuracy_rate`
 
-## 12. 后续扩展建议
+## 13. 后续扩展建议
 
 后续可以继续扩展：
 
 - 增加班级表、班级成员表，支持教师给班级发题。
-- 增加收藏表，支持收藏题目。
+- 将知识库检索升级为 Embedding 向量检索。
 - 增加错题本视图或接口，基于 `practice_answers` 查询即可。
 - 增加文件上传记录的真实存储策略，例如本地文件、对象存储。
 - 将用户密码从明文改为哈希存储。

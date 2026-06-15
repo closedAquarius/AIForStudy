@@ -1,9 +1,14 @@
-import http from '@ohos.net.http';
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
 import { FeatureBottomNav } from '../components/FeatureBottomNav';
-import { saveStudyDiary, updateStudyDiary, deleteStudyDiary, polishDiary, CommonResult, StudyDiarySaveData } from '../common/ApiClient';
-
-const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
+import {
+  saveStudyDiary,
+  getStudyDiaryList,
+  updateStudyDiary,
+  deleteStudyDiary,
+  polishDiary,
+  CommonResult,
+  StudyDiarySaveData
+} from '../common/ApiClient';
 
 interface DiaryEntry {
   id: number;
@@ -12,17 +17,6 @@ interface DiaryEntry {
   moodScore: number;
   tags: string[];
   content: string;
-}
-
-interface DiaryListResponse {
-  success?: boolean;
-  message?: string;
-  data?: DiaryEntry[];
-}
-
-interface RequestHeader {
-  'Content-Type': string;
-  Authorization: string;
 }
 
 class DiaryEntryDataSource implements IDataSource {
@@ -56,54 +50,6 @@ class DiaryEntryDataSource implements IDataSource {
       listener.onDataReloaded();
     });
   }
-}
-
-function createRequestHeader(token: string): RequestHeader {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`
-  };
-}
-
-function fetchDiaryList(token: string): Promise<DiaryEntry[]> {
-  return new Promise((resolve: (value: DiaryEntry[]) => void, reject: (reason: Error) => void) => {
-    const request = http.createHttp();
-    request.request(
-      `${API_BASE_URL}/diary/list`,
-      {
-        method: http.RequestMethod.GET,
-        header: createRequestHeader(token),
-        expectDataType: http.HttpDataType.STRING,
-        connectTimeout: 8000,
-        readTimeout: 8000
-      },
-      (error, response) => {
-        request.destroy();
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-
-        try {
-          const raw = response.result as string;
-          const parsed = JSON.parse(raw) as DiaryEntry[] | DiaryListResponse;
-          if (Array.isArray(parsed)) {
-            resolve(parsed);
-            return;
-          }
-
-          if (parsed.success === false) {
-            reject(new Error(parsed.message || '历史日记加载失败'));
-            return;
-          }
-
-          resolve(parsed.data ?? []);
-        } catch (parseError) {
-          reject(new Error('后端响应解析失败'));
-        }
-      }
-    );
-  });
 }
 
 @Entry
@@ -278,7 +224,11 @@ struct DiaryPage {
     }
 
     try {
-      const entries = await fetchDiaryList(token);
+      const result = await getStudyDiaryList(token);
+      if (!result.success) {
+        throw new Error(result.message || '历史日记加载失败');
+      }
+      const entries: DiaryEntry[] = result.data ?? [];
       const sortedEntries = entries.sort((left: DiaryEntry, right: DiaryEntry) => {
         return right.entryDate.localeCompare(left.entryDate);
       });

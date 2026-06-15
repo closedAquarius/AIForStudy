@@ -6,6 +6,7 @@ export interface LoginUser {
   id: number;
   username: string;
   nickname: string;
+
   email?: string;
   avatarUrl?: string;
   role: string;
@@ -652,7 +653,9 @@ function requestJson<T>(
   method: http.RequestMethod,
   path: string,
   token: string,
-  bodyText: string = ''
+  bodyText: string = '',
+  connectTimeout: number = 8000,
+  readTimeout: number = 8000
 ): Promise<CommonResult<T>> {
   return new Promise((resolve: (value: CommonResult<T>) => void, reject: (reason: Error) => void) => {
     const request = http.createHttp();
@@ -668,8 +671,8 @@ function requestJson<T>(
         method: method,
         header: header,
         extraData: bodyText.length > 0 ? bodyText : undefined,
-        connectTimeout: 8000,
-        readTimeout: 8000
+        connectTimeout: connectTimeout,
+        readTimeout: readTimeout
       },
       (error, response) => {
         request.destroy();
@@ -942,7 +945,9 @@ export function explainWrongQuestion(
     http.RequestMethod.POST,
     '/ai-learning/explain-question',
     token,
-    JSON.stringify(body)
+    JSON.stringify(body),
+    20000,
+    300000
   );
 }
 
@@ -1095,6 +1100,16 @@ export function saveStudyDiary(
     '/diary/create',
     token,
     JSON.stringify(body)
+  );
+}
+
+export function getStudyDiaryList(
+  token: string
+): Promise<CommonResult<StudyDiaryHistoryItem[]>> {
+  return requestJson<StudyDiaryHistoryItem[]>(
+    http.RequestMethod.GET,
+    '/diary/list',
+    token
   );
 }
 
@@ -1356,7 +1371,35 @@ export interface PracticeQuestionItem {
   knowledgePoint: string;
   practiceStatus: string;
   practiceStatusLabel: string;
+  isFavorite: number;
+  personalNote: string;
   options: QuestionOptionItem[];
+}
+
+export interface QuestionPersonalRecordData {
+  questionId: number;
+  isFavorite: number;
+  note: string;
+  updatedAt: string;
+}
+
+export interface FavoriteQuestionItem {
+  id: number;
+  type: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  knowledgePoint: string;
+  bankName: string;
+  note: string;
+  updatedAt: string;
+}
+
+export interface FavoriteQuestionListData {
+  questions: FavoriteQuestionItem[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface PracticeStartData {
@@ -1412,6 +1455,11 @@ interface PracticeSubmitRequest {
   answers: PracticeAnswerSubmitItem[];
 }
 
+interface QuestionPersonalRecordRequest {
+  is_favorite: boolean;
+  note: string;
+}
+
 export function startPracticeSession(
   token: string,
   bankId: number,
@@ -1457,5 +1505,244 @@ export function submitPracticeSession(
     `/practice-sessions/${sessionId}/submit`,
     token,
     JSON.stringify(body)
+  );
+}
+
+export function updateQuestionPersonalRecord(
+  token: string,
+  questionId: number,
+  isFavorite: boolean,
+  note: string
+): Promise<CommonResult<QuestionPersonalRecordData>> {
+  const body: QuestionPersonalRecordRequest = {
+    is_favorite: isFavorite,
+    note: note
+  };
+  return requestJson<QuestionPersonalRecordData>(
+    http.RequestMethod.PUT,
+    `/questions/${questionId}/personal-record`,
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function getFavoriteQuestions(
+  token: string,
+  keyword: string = '',
+  page: number = 1,
+  pageSize: number = 50
+): Promise<CommonResult<FavoriteQuestionListData>> {
+  let path = '/favorite-questions';
+  path = appendQuery(path, 'keyword', keyword);
+  path = appendQuery(path, 'page', page.toString());
+  path = appendQuery(path, 'pageSize', pageSize.toString());
+  return requestJson<FavoriteQuestionListData>(
+    http.RequestMethod.GET,
+    path,
+    token
+  );
+}
+
+export interface KnowledgeBaseItem {
+  id: number;
+  name: string;
+  description: string;
+  documentCount: number;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeBaseListData {
+  knowledgeBases: KnowledgeBaseItem[];
+}
+
+export interface KnowledgeDocumentItem {
+  id: number;
+  title: string;
+  fileName: string;
+  fileType: string;
+  parseStatus: string;
+  summary: string;
+  chunkCount: number;
+  createdAt: string;
+}
+
+export interface KnowledgeDocumentListData {
+  documents: KnowledgeDocumentItem[];
+}
+
+export interface KnowledgeSourceItem {
+  documentId: number;
+  fileName: string;
+  chunkIndex: number;
+  pageLabel: string;
+  content: string;
+  score: number;
+}
+
+export interface KnowledgeAskData {
+  queryId: number;
+  answer: string;
+  sources: KnowledgeSourceItem[];
+}
+
+export interface KnowledgeQueryItem {
+  id: number;
+  question: string;
+  answer: string;
+  sources: KnowledgeSourceItem[];
+  createdAt: string;
+}
+
+export interface KnowledgeQueryListData {
+  queries: KnowledgeQueryItem[];
+}
+
+interface CreateKnowledgeBaseRequest {
+  name: string;
+  description: string;
+}
+
+interface AskKnowledgeBaseRequest {
+  question: string;
+}
+
+interface KnowledgeUploadHeader {
+  'Content-Type': string;
+  Authorization: string;
+}
+
+export function getKnowledgeBases(
+  token: string
+): Promise<CommonResult<KnowledgeBaseListData>> {
+  return requestJson<KnowledgeBaseListData>(
+    http.RequestMethod.GET,
+    '/knowledge-bases',
+    token
+  );
+}
+
+export function createKnowledgeBase(
+  token: string,
+  name: string,
+  description: string
+): Promise<CommonResult<KnowledgeBaseItem>> {
+  const body: CreateKnowledgeBaseRequest = {
+    name: name,
+    description: description
+  };
+  return requestJson<KnowledgeBaseItem>(
+    http.RequestMethod.POST,
+    '/knowledge-bases',
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function deleteKnowledgeBase(
+  token: string,
+  baseId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/knowledge-bases/${baseId}`,
+    token
+  );
+}
+
+export function getKnowledgeDocuments(
+  token: string,
+  baseId: number
+): Promise<CommonResult<KnowledgeDocumentListData>> {
+  return requestJson<KnowledgeDocumentListData>(
+    http.RequestMethod.GET,
+    `/knowledge-bases/${baseId}/documents`,
+    token
+  );
+}
+
+export function uploadKnowledgeDocument(
+  token: string,
+  baseId: number,
+  filePath: string,
+  fileName: string
+): Promise<CommonResult<KnowledgeDocumentItem>> {
+  return new Promise((resolve: (value: CommonResult<KnowledgeDocumentItem>) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const header: KnowledgeUploadHeader = {
+      'Content-Type': 'multipart/form-data',
+      Authorization: `Bearer ${token}`
+    };
+    const filePart: http.MultiFormData = {
+      name: 'file',
+      contentType: 'application/octet-stream',
+      filePath: filePath,
+      remoteFileName: fileName
+    };
+    request.request(
+      `${API_BASE_URL}/knowledge-bases/${baseId}/documents`,
+      {
+        method: http.RequestMethod.POST,
+        header: header,
+        multiFormDataList: [filePart],
+        connectTimeout: 15000,
+        readTimeout: 120000
+      },
+      (error, response) => {
+        request.destroy();
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        try {
+          resolve(JSON.parse(response.result as string) as CommonResult<KnowledgeDocumentItem>);
+        } catch (parseError) {
+          reject(new Error('后端响应解析失败'));
+        }
+      }
+    );
+  });
+}
+
+export function removeKnowledgeDocument(
+  token: string,
+  baseId: number,
+  documentId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/knowledge-bases/${baseId}/documents/${documentId}`,
+    token
+  );
+}
+
+export function askKnowledgeBase(
+  token: string,
+  baseId: number,
+  question: string
+): Promise<CommonResult<KnowledgeAskData>> {
+  const body: AskKnowledgeBaseRequest = {
+    question: question
+  };
+  return requestJson<KnowledgeAskData>(
+    http.RequestMethod.POST,
+    `/knowledge-bases/${baseId}/ask`,
+    token,
+    JSON.stringify(body),
+    20000,
+    300000
+  );
+}
+
+export function getKnowledgeQueries(
+  token: string,
+  baseId: number,
+  limit: number = 30
+): Promise<CommonResult<KnowledgeQueryListData>> {
+  return requestJson<KnowledgeQueryListData>(
+    http.RequestMethod.GET,
+    `/knowledge-bases/${baseId}/queries?limit=${limit}`,
+    token
   );
 }

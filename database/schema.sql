@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS diary_ai_reports;
 DROP TABLE IF EXISTS diary_entries;
 DROP TABLE IF EXISTS practice_answers;
 DROP TABLE IF EXISTS practice_sessions;
+DROP TABLE IF EXISTS user_question_records;
 DROP TABLE IF EXISTS question_tags;
 DROP TABLE IF EXISTS question_answers;
 DROP TABLE IF EXISTS question_options;
@@ -21,6 +22,10 @@ DROP TABLE IF EXISTS questions;
 DROP TABLE IF EXISTS question_import_rows;
 DROP TABLE IF EXISTS question_imports;
 DROP TABLE IF EXISTS generated_papers;
+DROP TABLE IF EXISTS knowledge_queries;
+DROP TABLE IF EXISTS document_chunks;
+DROP TABLE IF EXISTS knowledge_base_documents;
+DROP TABLE IF EXISTS knowledge_bases;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS question_banks;
@@ -129,6 +134,67 @@ CREATE TABLE documents (
     ON DELETE SET NULL,
   INDEX idx_documents_owner (owner_user_id),
   INDEX idx_documents_subject (subject_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE knowledge_bases (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  owner_user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  description VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_knowledge_bases_owner
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  INDEX idx_knowledge_bases_owner_time (owner_user_id, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE knowledge_base_documents (
+  knowledge_base_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (knowledge_base_id, document_id),
+  CONSTRAINT fk_knowledge_base_documents_base
+    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_knowledge_base_documents_document
+    FOREIGN KEY (document_id) REFERENCES documents(id)
+    ON DELETE CASCADE,
+  INDEX idx_knowledge_base_documents_document (document_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE document_chunks (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  chunk_index INT UNSIGNED NOT NULL,
+  content TEXT NOT NULL,
+  char_start INT UNSIGNED NOT NULL DEFAULT 0,
+  char_end INT UNSIGNED NOT NULL DEFAULT 0,
+  metadata JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_document_chunks_document
+    FOREIGN KEY (document_id) REFERENCES documents(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uk_document_chunks_document_index (document_id, chunk_index),
+  FULLTEXT KEY ft_document_chunks_content (content)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE knowledge_queries (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  knowledge_base_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  question TEXT NOT NULL,
+  answer LONGTEXT NOT NULL,
+  sources JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_knowledge_queries_base
+    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_knowledge_queries_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  INDEX idx_knowledge_queries_base_time (knowledge_base_id, created_at),
+  INDEX idx_knowledge_queries_user_time (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE generated_papers (
@@ -258,6 +324,24 @@ CREATE TABLE question_tags (
   CONSTRAINT fk_question_tags_tag
     FOREIGN KEY (tag_id) REFERENCES tags(id)
     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_question_records (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  question_id BIGINT UNSIGNED NOT NULL,
+  is_favorite TINYINT(1) NOT NULL DEFAULT 0,
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_user_question_records_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_user_question_records_question
+    FOREIGN KEY (question_id) REFERENCES questions(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uk_user_question_records_user_question (user_id, question_id),
+  INDEX idx_user_question_records_favorite (user_id, is_favorite, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE practice_sessions (

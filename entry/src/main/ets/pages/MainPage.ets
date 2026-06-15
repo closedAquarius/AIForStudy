@@ -220,6 +220,137 @@ struct MainPage {
     .margin({ left: 22, right: 22, top: 12 })
   }
 
+  @Builder
+  WrongQuestionBookBar() {
+    Row({ space: 10 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(36)
+          .height(36)
+          .fill('#FFF1F2')
+
+        Text('!')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#EF4444')
+      }
+
+      Column({ space: 2 }) {
+        Text('我的错题本')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Text('集中查看错题、解析和 AI 讲解')
+          .fontSize(11)
+          .fontColor('#64748B')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('>')
+        .fontSize(20)
+        .fontColor('#EF4444')
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 14, right: 14 })
+    .margin({ left: 22, right: 22, top: 6 })
+    .backgroundColor('#F9FFFFFF')
+    .borderRadius(12)
+    .border({ width: 1, color: '#FFE0E3' })
+    .onClick(() => {
+      this.goPage('pages/WrongQuestionBookPage');
+    })
+  }
+
+  @Builder
+  FavoriteQuestionBar() {
+    Row({ space: 10 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(36)
+          .height(36)
+          .fill('#FFF7E6')
+
+        Text('★')
+          .fontSize(18)
+          .fontColor('#D97706')
+      }
+
+      Column({ space: 2 }) {
+        Text('我的收藏')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Text('集中复习收藏题目和个人笔记')
+          .fontSize(11)
+          .fontColor('#64748B')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('>')
+        .fontSize(20)
+        .fontColor('#D97706')
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 14, right: 14 })
+    .margin({ left: 22, right: 22, top: 8 })
+    .backgroundColor('#F9FFFFFF')
+    .borderRadius(12)
+    .border({ width: 1, color: '#FDE7B2' })
+    .onClick(() => {
+      this.goPage('pages/FavoriteQuestionPage');
+    })
+  }
+
+  @Builder
+  KnowledgeBaseBar() {
+    Row({ space: 10 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(36)
+          .height(36)
+          .fill('#EEF5FF')
+
+        Text('K')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#2563EB')
+      }
+
+      Column({ space: 2 }) {
+        Text('文档知识库')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#0B1B44')
+
+        Text('上传课程资料，提问并查看答案来源')
+          .fontSize(11)
+          .fontColor('#64748B')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('>')
+        .fontSize(20)
+        .fontColor('#2563EB')
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 14, right: 14 })
+    .margin({ left: 22, right: 22, top: 8 })
+    .backgroundColor('#F9FFFFFF')
+    .borderRadius(12)
+    .border({ width: 1, color: '#DCEAFF' })
+    .onClick(() => {
+      this.goPage('pages/KnowledgeBasePage');
+    })
+  }
+
   build() {
     Stack() {
       Image($r('app.media.main_background2'))
@@ -229,6 +360,9 @@ struct MainPage {
 
       Column() {
         this.TopBar()
+        this.WrongQuestionBookBar()
+        this.FavoriteQuestionBar()
+        this.KnowledgeBaseBar()
 
         Blank()
           .layoutWeight(1)

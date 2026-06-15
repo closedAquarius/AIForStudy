@@ -2,14 +2,13 @@ import { fileIo, picker } from '@kit.CoreFileKit';
 import {
   AiChatMessageItem,
   AiConversationSummary,
-  AiDiaryPlanData,
   AiWrongQuestionItem,
   StudyDiaryHistoryItem,
   chatAiLearning,
   explainWrongQuestion,
-  generateStudyPlan,
   getAiConversationMessages,
   getAiLearningConversations,
+  getStudyDiaryList,
   getWrongQuestions
 } from '../common/ApiClient';
 import { FeatureBottomNav } from '../components/FeatureBottomNav';
@@ -28,7 +27,7 @@ struct AiLearningPage {
   @State showSidebar: boolean = false;
   @State showTools: boolean = false;
   @State showWrongPicker: boolean = false;
-  @State showPlanPicker: boolean = false;
+  @State showDiaryPicker: boolean = false;
   @State sidebarOffset: number = -420;
   @State sidebarMaskOpacity: number = 0;
 
@@ -40,10 +39,11 @@ struct AiLearningPage {
   @State loading: boolean = false;
 
   @State wrongQuestions: AiWrongQuestionItem[] = [];
+  @State diaries: StudyDiaryHistoryItem[] = [];
+  @State selectedDiaries: StudyDiaryHistoryItem[] = [];
   @State attachmentName: string = '';
   @State attachmentPath: string = '';
   @State attachmentType: string = '';
-  @State planDaysText: string = '3';
 
   aboutToAppear(): void {
     this.reloadAll();
@@ -57,6 +57,7 @@ struct AiLearningPage {
   private async reloadAll(): Promise<void> {
     await this.loadConversations();
     await this.loadWrongQuestions();
+    await this.loadDiaries();
   }
 
   private async loadConversations(): Promise<void> {
@@ -83,9 +84,9 @@ struct AiLearningPage {
         result.data.messages.forEach((item: AiChatMessageItem) => {
           next.push({
             role: item.role,
-            content: this.cleanAttachmentText(item.content),
-            attachmentName: this.extractAttachmentName(item.content),
-            attachmentType: this.extractAttachmentType(item.content)
+            content: this.cleanContextText(item.content),
+            attachmentName: this.extractContextName(item.content),
+            attachmentType: this.extractContextType(item.content)
           });
         });
         this.messages = next;
@@ -107,6 +108,7 @@ struct AiLearningPage {
     this.inputText = '';
     this.notice = '已开启新对话';
     this.clearAttachment();
+    this.clearDiary();
     this.closePanels();
   }
 
@@ -123,6 +125,15 @@ struct AiLearningPage {
     }
   }
 
+  private async loadDiaries(): Promise<void> {
+    try {
+      const result = await getStudyDiaryList(this.getToken());
+      this.diaries = result.success && result.data ? result.data : [];
+    } catch (error) {
+      this.diaries = [];
+    }
+  }
+
   private appendMessage(role: string, content: string, attachmentName: string = '', attachmentType: string = ''): void {
     const next: LocalChatMessage[] = [];
     this.messages.forEach((item: LocalChatMessage) => {
@@ -135,6 +146,14 @@ struct AiLearningPage {
       attachmentType: attachmentType
     });
     this.messages = next;
+  }
+
+  private appendUserMessageOnce(content: string): void {
+    const lastMessage = this.messages.length > 0 ? this.messages[this.messages.length - 1] : undefined;
+    if (lastMessage && lastMessage.role === 'user' && lastMessage.content === content) {
+      return;
+    }
+    this.appendMessage('user', content);
   }
 
   private async chooseAttachment(): Promise<void> {
@@ -167,7 +186,7 @@ struct AiLearningPage {
       this.notice = `已添加附件：${sourceName}`;
       this.showTools = false;
       this.showWrongPicker = false;
-      this.showPlanPicker = false;
+      this.showDiaryPicker = false;
     } catch (error) {
       this.notice = `附件选择失败：${(error as Error).message}`;
     }
@@ -179,26 +198,71 @@ struct AiLearningPage {
     this.attachmentType = '';
   }
 
+  private isDiarySelected(diaryId: number): boolean {
+    return this.selectedDiaries.some((item: StudyDiaryHistoryItem) => item.id === diaryId);
+  }
+
+  private toggleDiarySelection(item: StudyDiaryHistoryItem): void {
+    if (this.isDiarySelected(item.id)) {
+      this.selectedDiaries = this.selectedDiaries.filter(
+        (selected: StudyDiaryHistoryItem) => selected.id !== item.id
+      );
+    } else {
+      this.selectedDiaries = [...this.selectedDiaries, item];
+    }
+    this.notice = `已选择 ${this.selectedDiaries.length} 篇日记`;
+  }
+
+  private removeSelectedDiary(diaryId: number): void {
+    this.selectedDiaries = this.selectedDiaries.filter(
+      (item: StudyDiaryHistoryItem) => item.id !== diaryId
+    );
+  }
+
+  private clearDiary(): void {
+    this.selectedDiaries = [];
+  }
+
   private async sendMessage(): Promise<void> {
     if (this.loading) {
       return;
     }
 
     const text = this.inputText.trim();
-    if (text.length === 0 && this.attachmentPath.length === 0) {
+    if (text.length === 0 && this.attachmentPath.length === 0 && this.selectedDiaries.length === 0) {
       this.notice = '请输入问题，或点击 + 添加附件。';
       return;
     }
 
-    const userText = text.length > 0 ? text : `请结合附件 ${this.attachmentName} 辅助讲解。`;
+    const userText = text.length > 0
+      ? text
+      : (this.selectedDiaries.length > 0 ? '请分析这些学习日记，并给出学习建议。' : `请结合附件 ${this.attachmentName} 辅助讲解。`);
+    let requestText = userText;
+    let contextName = this.attachmentName;
+    let contextType = this.attachmentType;
+    if (this.selectedDiaries.length > 0) {
+      const diaryTitles: string[] = [];
+      const diaryContexts: string[] = [];
+      this.selectedDiaries.forEach((item: StudyDiaryHistoryItem, index: number) => {
+        diaryTitles.push(item.title);
+        diaryContexts.push(
+          `日记 ${index + 1}\n标题：${item.title}\n日期：${item.entryDate}\n心情：${item.moodScore}/10\n内容：${item.content}`
+        );
+      });
+      requestText += `\n\n已选择日记：${diaryTitles.join('、')}\n学习日记上下文：\n${diaryContexts.join('\n\n')}`;
+      contextName = this.selectedDiaries.length === 1
+        ? this.selectedDiaries[0].title
+        : `${this.selectedDiaries.length} 篇学习日记`;
+      contextType = '日记';
+    }
     this.loading = true;
     this.notice = 'AI 正在思考...';
-    this.appendMessage('user', userText, this.attachmentName, this.attachmentType);
+    this.appendMessage('user', userText, contextName, contextType);
 
     try {
       const result = await chatAiLearning(
         this.getToken(),
-        userText,
+        requestText,
         'qa',
         this.conversationId,
         0,
@@ -212,6 +276,7 @@ struct AiLearningPage {
         this.appendMessage('assistant', result.data.assistant_message);
         this.inputText = '';
         this.clearAttachment();
+        this.clearDiary();
         this.notice = '';
         await this.loadConversations();
       } else {
@@ -232,8 +297,8 @@ struct AiLearningPage {
     this.loading = true;
     this.showTools = false;
     this.showWrongPicker = false;
-    this.showPlanPicker = false;
-    this.appendMessage('user', `请讲解这道错题：${question.stem}`);
+    this.showDiaryPicker = false;
+    this.appendUserMessageOnce(`请讲解这道错题：${question.stem}`);
     this.notice = '正在生成错题讲解...';
 
     try {
@@ -251,58 +316,11 @@ struct AiLearningPage {
     }
   }
 
-  private async makeStudyPlan(): Promise<void> {
-    if (this.loading) {
-      return;
-    }
-
-    const days = this.parseDays();
-    this.loading = true;
-    this.showTools = false;
-    this.showWrongPicker = false;
-    this.showPlanPicker = false;
-    this.appendMessage('user', `请根据我的学习日记，规划未来 ${days} 天的学习方向。`);
-    this.notice = '正在分析学习日记...';
-
-    try {
-      const result = await generateStudyPlan(this.getToken(), days);
-      if (result.success && result.data) {
-        this.appendMessage('assistant', this.composePlanAnswer(result.data));
-        this.notice = '';
-      } else {
-        this.notice = result.message || '学习建议生成失败';
-      }
-    } catch (error) {
-      this.notice = `学习建议生成失败：${(error as Error).message}`;
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  private composePlanAnswer(data: AiDiaryPlanData): string {
-    const diaryLines: string[] = [];
-    data.recent_diaries.forEach((item: StudyDiaryHistoryItem) => {
-      diaryLines.push(`${item.entryDate} | 心情 ${item.moodScore} | ${item.title}`);
-    });
-    if (diaryLines.length === 0) {
-      return data.plan;
-    }
-    return `参考的最近日记：\n${diaryLines.join('\n')}\n\n学习建议：\n${data.plan}`;
-  }
-
-  private parseDays(): number {
-    const parsed = Number(this.planDaysText);
-    if (Number.isNaN(parsed)) {
-      return 3;
-    }
-    return Math.max(1, Math.min(14, Math.floor(parsed)));
-  }
-
   private closePanels(): void {
     this.hideSidebar();
     this.showTools = false;
     this.showWrongPicker = false;
-    this.showPlanPicker = false;
+    this.showDiaryPicker = false;
   }
 
   private toggleSidebar(): void {
@@ -312,7 +330,7 @@ struct AiLearningPage {
       this.showSidebar = true;
       this.showTools = false;
       this.showWrongPicker = false;
-      this.showPlanPicker = false;
+      this.showDiaryPicker = false;
       animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
         this.sidebarOffset = 0;
         this.sidebarMaskOpacity = 1;
@@ -335,18 +353,21 @@ struct AiLearningPage {
     if (this.showTools) {
       this.showSidebar = false;
       this.showWrongPicker = false;
-      this.showPlanPicker = false;
+      this.showDiaryPicker = false;
     }
   }
 
   private toggleWrongPanel(): void {
     this.showWrongPicker = !this.showWrongPicker;
-    this.showPlanPicker = false;
+    this.showDiaryPicker = false;
   }
 
-  private togglePlanPanel(): void {
-    this.showPlanPicker = !this.showPlanPicker;
+  private async toggleDiaryPanel(): Promise<void> {
+    this.showDiaryPicker = !this.showDiaryPicker;
     this.showWrongPicker = false;
+    if (this.showDiaryPicker) {
+      await this.loadDiaries();
+    }
   }
 
   private extractFileName(uri: string): string {
@@ -384,6 +405,55 @@ struct AiLearningPage {
       text = `- ${text.substring(2)}`;
     }
     return text.split('**').join('').split('__').join('');
+  }
+
+  private cleanContextText(content: string): string {
+    const selectedIndex = content.indexOf('已选择日记：');
+    if (selectedIndex >= 0) {
+      return content.substring(0, selectedIndex).trim();
+    }
+    const diaryIndex = content.indexOf('学习日记上下文：');
+    if (diaryIndex >= 0) {
+      return content.substring(0, diaryIndex).trim();
+    }
+    return this.cleanAttachmentText(content);
+  }
+
+  private extractContextName(content: string): string {
+    const selectedMark = '已选择日记：';
+    const selectedIndex = content.indexOf(selectedMark);
+    if (selectedIndex >= 0) {
+      const lineEnd = content.indexOf('\n', selectedIndex);
+      const titles = content.substring(
+        selectedIndex + selectedMark.length,
+        lineEnd >= 0 ? lineEnd : content.length
+      ).trim();
+      if (titles.indexOf('、') >= 0) {
+        return `${titles.split('、').length} 篇学习日记`;
+      }
+      return titles;
+    }
+    const diaryIndex = content.indexOf('学习日记上下文：');
+    if (diaryIndex >= 0) {
+      const titleMark = '标题：';
+      const titleIndex = content.indexOf(titleMark, diaryIndex);
+      if (titleIndex >= 0) {
+        const lineEnd = content.indexOf('\n', titleIndex);
+        return content.substring(
+          titleIndex + titleMark.length,
+          lineEnd >= 0 ? lineEnd : content.length
+        ).trim();
+      }
+      return '学习日记';
+    }
+    return this.extractAttachmentName(content);
+  }
+
+  private extractContextType(content: string): string {
+    if (content.indexOf('学习日记上下文：') >= 0) {
+      return '日记';
+    }
+    return this.extractAttachmentType(content);
   }
 
   private cleanAttachmentText(content: string): string {
@@ -710,32 +780,63 @@ struct AiLearningPage {
   }
 
   @Builder
-  PlanPanel() {
-    Row({ space: 8 }) {
-      TextInput({ placeholder: '天数', text: this.planDaysText })
-        .layoutWeight(1)
-        .height(38)
-        .type(InputType.Number)
-        .fontSize(13)
-        .fontColor('#111827')
-        .backgroundColor('#F9FAFB')
-        .borderRadius(8)
-        .padding({ left: 10, right: 10 })
-        .onChange((value: string) => {
-          this.planDaysText = value;
-        })
+  DiaryPanel() {
+    Column({ space: 8 }) {
+      if (this.diaries.length === 0) {
+        Text('暂无学习日记，请先在日记页面记录。')
+          .width('100%')
+          .fontSize(12)
+          .fontColor('#6B7280')
+          .textAlign(TextAlign.Center)
+          .padding(12)
+      } else {
+        Scroll() {
+          Column({ space: 8 }) {
+            ForEach(this.diaries, (item: StudyDiaryHistoryItem) => {
+              Row({ space: 8 }) {
+                Column({ space: 4 }) {
+                  Text(item.title)
+                    .width('100%')
+                    .fontSize(13)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#111827')
+                    .maxLines(1)
 
-      Button('生成')
-        .width(72)
-        .height(38)
-        .fontSize(13)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#F59E0B')
-        .borderRadius(8)
-        .onClick(() => {
-          this.makeStudyPlan();
-        })
+                  Text(`${item.entryDate} · 心情 ${item.moodScore}/10`)
+                    .width('100%')
+                    .fontSize(11)
+                    .fontColor('#6B7280')
+
+                  Text(item.content)
+                    .width('100%')
+                    .fontSize(11)
+                    .fontColor('#4B5563')
+                    .maxLines(2)
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+
+                Button(this.isDiarySelected(item.id) ? '已选' : '选择')
+                  .width(58)
+                  .height(30)
+                  .fontSize(12)
+                  .fontColor(this.isDiarySelected(item.id) ? '#92400E' : '#FFFFFF')
+                  .backgroundColor(this.isDiarySelected(item.id) ? '#FDE68A' : '#F59E0B')
+                  .borderRadius(8)
+                  .onClick(() => {
+                    this.toggleDiarySelection(item);
+                  })
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(8)
+              .backgroundColor('#FFFBEB')
+            }, (item: StudyDiaryHistoryItem) => `${item.id}`)
+          }
+          .width('100%')
+        }
+        .height(220)
+      }
     }
     .width('100%')
   }
@@ -750,8 +851,8 @@ struct AiLearningPage {
         this.ToolButton('!', '错题', `${this.wrongQuestions.length} 题`, () => {
           this.toggleWrongPanel();
         })
-        this.ToolButton('D', '日记', '学习方向', () => {
-          this.togglePlanPanel();
+        this.ToolButton('D', '日记', `${this.diaries.length} 篇`, () => {
+          this.toggleDiaryPanel();
         })
       }
       .width('100%')
@@ -760,8 +861,8 @@ struct AiLearningPage {
         this.WrongQuestionPanel()
       }
 
-      if (this.showPlanPicker) {
-        this.PlanPanel()
+      if (this.showDiaryPicker) {
+        this.DiaryPanel()
       }
     }
     .width('100%')
@@ -800,6 +901,72 @@ struct AiLearningPage {
   }
 
   @Builder
+  DiaryChip() {
+    if (this.selectedDiaries.length > 0) {
+      Column({ space: 6 }) {
+        Row() {
+          Text(`已选择 ${this.selectedDiaries.length} 篇日记`)
+            .width('100%')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#92400E')
+            .layoutWeight(1)
+
+          Button('清空')
+            .width(48)
+            .height(26)
+            .fontSize(11)
+            .fontColor('#92400E')
+            .backgroundColor('#FDE68A')
+            .borderRadius(8)
+            .onClick(() => {
+              this.clearDiary();
+            })
+        }
+        .width('100%')
+
+        ForEach(this.selectedDiaries, (item: StudyDiaryHistoryItem) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(item.title)
+                .width('100%')
+                .fontSize(12)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#111827')
+                .maxLines(1)
+
+              Text(`${item.entryDate} · 心情 ${item.moodScore}/10`)
+                .width('100%')
+                .fontSize(10)
+                .fontColor('#92400E')
+                .maxLines(1)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Button('x')
+              .width(30)
+              .height(28)
+              .fontSize(13)
+              .fontColor('#92400E')
+              .backgroundColor('#FDE68A')
+              .borderRadius(8)
+              .onClick(() => {
+                this.removeSelectedDiary(item.id);
+              })
+          }
+          .width('100%')
+        }, (item: StudyDiaryHistoryItem) => `${item.id}`)
+      }
+      .width('100%')
+      .padding({ left: 10, right: 8, top: 7, bottom: 7 })
+      .borderRadius(8)
+      .backgroundColor('#FFFBEB')
+      .border({ width: 1, color: '#FDE68A' })
+    }
+  }
+
+  @Builder
   InputBar() {
     Column({ space: 8 }) {
       if (this.showTools) {
@@ -807,6 +974,7 @@ struct AiLearningPage {
       }
 
       this.AttachmentChip()
+      this.DiaryChip()
 
       Row({ space: 8 }) {
         TextInput({ placeholder: '问知识点、题目或学习规划', text: this.inputText })

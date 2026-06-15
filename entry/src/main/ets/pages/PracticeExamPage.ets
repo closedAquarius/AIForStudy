@@ -6,7 +6,8 @@ import {
   PracticeSessionData,
   QuestionOptionItem,
   getPracticeSession,
-  submitPracticeSession
+  submitPracticeSession,
+  updateQuestionPersonalRecord
 } from '../common/ApiClient';
 
 interface PracticeExamParams {
@@ -30,6 +31,9 @@ struct PracticeExamPage {
   @State currentQuestion: PracticeQuestionItem | null = null;
   @State answers: LocalAnswer[] = [];
   @State showAnswerCard: boolean = false;
+  @State showNoteDialog: boolean = false;
+  @State noteText: string = '';
+  @State savingRecord: boolean = false;
   @State startedAtMillis: number = 0;
 
   aboutToAppear(): void {
@@ -242,6 +246,82 @@ struct PracticeExamPage {
     return '⭐⭐⭐⭐⭐';
   }
 
+  private replaceQuestion(question: PracticeQuestionItem, isFavorite: number, note: string): void {
+    if (!this.session) {
+      return;
+    }
+    const updated: PracticeQuestionItem = {
+      id: question.id,
+      seq: question.seq,
+      type: question.type,
+      typeLabel: question.typeLabel,
+      stem: question.stem,
+      analysis: question.analysis,
+      difficulty: question.difficulty,
+      score: question.score,
+      knowledgePoint: question.knowledgePoint,
+      practiceStatus: question.practiceStatus,
+      practiceStatusLabel: question.practiceStatusLabel,
+      isFavorite: isFavorite,
+      personalNote: note,
+      options: question.options
+    };
+    const nextQuestions: PracticeQuestionItem[] = [];
+    for (let i = 0; i < this.session.questions.length; i++) {
+      nextQuestions.push(this.session.questions[i].id === question.id ? updated : this.session.questions[i]);
+    }
+    this.session.questions = nextQuestions;
+    this.currentQuestion = updated;
+  }
+
+  private async saveQuestionRecord(
+    question: PracticeQuestionItem,
+    isFavorite: boolean,
+    note: string,
+    successMessage: string
+  ): Promise<void> {
+    if (this.savingRecord) {
+      return;
+    }
+    this.savingRecord = true;
+    try {
+      const result = await updateQuestionPersonalRecord(
+        this.getToken(),
+        question.id,
+        isFavorite,
+        note
+      );
+      if (result.success && result.data) {
+        this.replaceQuestion(question, result.data.isFavorite, result.data.note);
+        this.message = successMessage;
+      } else {
+        this.showTip(result.message || '保存失败');
+      }
+    } catch (error) {
+      this.showTip(`保存失败：${(error as Error).message}`);
+    } finally {
+      this.savingRecord = false;
+    }
+  }
+
+  private openNoteDialog(question: PracticeQuestionItem): void {
+    this.noteText = question.personalNote;
+    this.showNoteDialog = true;
+  }
+
+  private async saveNote(): Promise<void> {
+    if (!this.currentQuestion) {
+      return;
+    }
+    await this.saveQuestionRecord(
+      this.currentQuestion,
+      this.currentQuestion.isFavorite === 1,
+      this.noteText.trim(),
+      '笔记已保存'
+    );
+    this.showNoteDialog = false;
+  }
+
   private prevQuestion(): void {
     if (this.currentIndex > 0) {
       this.currentIndex -= 1;
@@ -409,6 +489,37 @@ struct PracticeExamPage {
           .borderRadius(14)
           .backgroundColor('#F8FBFF')
       }
+
+      Row({ space: 10 }) {
+        Button(question.isFavorite === 1 ? '已收藏' : '收藏')
+          .layoutWeight(1)
+          .height(40)
+          .fontSize(13)
+          .fontColor(question.isFavorite === 1 ? '#B45309' : '#475569')
+          .backgroundColor(question.isFavorite === 1 ? '#FFF7E6' : '#F1F5F9')
+          .borderRadius(8)
+          .enabled(!this.savingRecord)
+          .onClick(() => {
+            this.saveQuestionRecord(
+              question,
+              question.isFavorite !== 1,
+              question.personalNote,
+              question.isFavorite === 1 ? '已取消收藏' : '已收藏这道题'
+            );
+          })
+
+        Button(question.personalNote.length > 0 ? '查看笔记' : '添加笔记')
+          .layoutWeight(1)
+          .height(40)
+          .fontSize(13)
+          .fontColor('#2563EB')
+          .backgroundColor('#EEF5FF')
+          .borderRadius(8)
+          .onClick(() => {
+            this.openNoteDialog(question);
+          })
+      }
+      .width('100%')
 
       if (question.options.length > 0) {
         Column({ space: 10 }) {
@@ -645,6 +756,61 @@ struct PracticeExamPage {
         Column() {
           Blank().layoutWeight(1)
           this.AnswerCardPanel()
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+      }
+
+      if (this.showNoteDialog) {
+        Column() {
+          Blank().layoutWeight(1)
+          Column({ space: 14 }) {
+            Row() {
+              Text('题目笔记')
+                .fontSize(20)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#0B1B44')
+              Blank()
+              Button('取消')
+                .height(34)
+                .fontSize(13)
+                .fontColor('#64748B')
+                .backgroundColor('#F1F5F9')
+                .borderRadius(8)
+                .onClick(() => {
+                  this.showNoteDialog = false;
+                })
+            }
+            .width('100%')
+
+            TextArea({ placeholder: '记录解题思路、易错点或复习提醒', text: this.noteText })
+              .width('100%')
+              .height(150)
+              .fontSize(14)
+              .backgroundColor('#F8FAFC')
+              .borderRadius(8)
+              .padding(12)
+              .onChange((value: string) => {
+                this.noteText = value;
+              })
+
+            Button(this.savingRecord ? '保存中...' : '保存笔记')
+              .width('100%')
+              .height(44)
+              .fontSize(14)
+              .fontColor('#FFFFFF')
+              .backgroundColor('#2563EB')
+              .borderRadius(8)
+              .enabled(!this.savingRecord)
+              .onClick(() => {
+                this.saveNote();
+              })
+          }
+          .width('100%')
+          .padding(20)
+          .backgroundColor('#FFFFFF')
+          .borderRadius({ topLeft: 18, topRight: 18 })
         }
         .width('100%')
         .height('100%')

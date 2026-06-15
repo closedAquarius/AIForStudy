@@ -21,12 +21,16 @@ from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
 from services.password_reset_service import PasswordResetService
 from practice_api import practice_bp
+from question_record_api import question_record_bp
+from knowledge_base_api import knowledge_base_bp
 
 
 
 app = Flask(__name__)
 app.register_blueprint(question_bank_bp, url_prefix="/api")
 app.register_blueprint(practice_bp, url_prefix="/api")
+app.register_blueprint(question_record_bp, url_prefix="/api")
+app.register_blueprint(knowledge_base_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)

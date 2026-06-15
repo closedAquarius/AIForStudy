@@ -10,7 +10,8 @@ from db import db_cursor
 practice_bp = Blueprint("practice_api", __name__)
 
 ALLOWED_COUNTS = {5, 10, 20, 50}
-ALLOWED_MODES = {"new_first", "wrong_first"}
+ALLOWED_MODES = {"new_first", "wrong_first", "mock_exam"}
+ALLOWED_EXAM_DURATIONS = {10, 20, 30, 45, 60, 90, 120}
 OBJECTIVE_TYPES = {"single_choice", "multiple_choice", "true_false"}
 
 
@@ -129,6 +130,10 @@ def _build_sample(pool, count, mode):
     for row in pool:
         buckets[_row_status(row)].append(row)
 
+    if mode == "mock_exam":
+        selected = list(pool)
+        random.shuffle(selected)
+        return selected[:count]
     if mode == "wrong_first":
         quotas = {
             "wrong": count * 6 // 10,
@@ -342,13 +347,19 @@ def start_practice():
     except (TypeError, ValueError):
         return fail("刷题参数错误")
     mode = (body.get("mode") or "new_first").strip()
+    try:
+        duration_minutes = int(body.get("duration_minutes") or 30)
+    except (TypeError, ValueError):
+        return fail("考试时长参数错误")
 
     if bank_id <= 0:
         return fail("题库 ID 不能为空")
     if count not in ALLOWED_COUNTS:
         return fail("刷题数量只能选择 5、10、20、50")
     if mode not in ALLOWED_MODES:
-        return fail("刷题模式只能选择新题优先或错题优先")
+        return fail("答题模式不受支持")
+    if mode == "mock_exam" and duration_minutes not in ALLOWED_EXAM_DURATIONS:
+        return fail("模拟考试时长只能选择 10、20、30、45、60、90、120 分钟")
 
     with db_cursor(commit=True) as cursor:
         if not _bank_visible(cursor, bank_id, user["id"]):
@@ -363,12 +374,17 @@ def start_practice():
         if not question_ids:
             return fail("未抽取到题目，请先导入题目")
 
-        db_mode = "review" if mode == "new_first" else "wrong_only"
+        if mode == "mock_exam":
+            db_mode = "paper"
+        else:
+            db_mode = "review" if mode == "new_first" else "wrong_only"
         filter_config = {
             "selected_mode": mode,
             "requested_count": count,
             "actual_count": len(question_ids),
             "question_ids": question_ids,
+            "duration_minutes": duration_minutes if mode == "mock_exam" else 0,
+            "auto_submit": mode == "mock_exam",
         }
         cursor.execute(
             """
@@ -393,6 +409,7 @@ def start_practice():
         "mode": mode,
         "requestedCount": count,
         "actualCount": len(question_ids),
+        "durationMinutes": duration_minutes if mode == "mock_exam" else 0,
         "questions": questions,
     }, "刷题会话创建成功", 201)
 
@@ -420,11 +437,14 @@ def get_practice_session(session_id):
 
         questions = _fetch_session_questions(cursor, session, include_answer=False)
 
+    config = _parse_json(session.get("filter_config"), {})
     return success({
         "sessionId": session["id"],
         "bankId": session["question_bank_id"],
         "bankName": session.get("bank_name") or "今日复习",
-        "mode": _parse_json(session.get("filter_config"), {}).get("selected_mode") or session.get("mode"),
+        "mode": config.get("selected_mode") or session.get("mode"),
+        "durationMinutes": int(config.get("duration_minutes") or 0),
+        "autoSubmit": bool(config.get("auto_submit")),
         "totalCount": int(session.get("total_count") or len(questions)),
         "startedAt": str(session.get("started_at") or ""),
         "finishedAt": str(session.get("finished_at") or ""),
@@ -468,6 +488,8 @@ def submit_practice_session(session_id):
         session = cursor.fetchone()
         if not session:
             return fail("刷题会话不存在", 404)
+        if session.get("finished_at"):
+            return fail("本次答题已经提交，请查看成绩报告")
 
         config = _parse_json(session.get("filter_config"), {})
         question_ids = config.get("question_ids") or []
@@ -488,6 +510,9 @@ def submit_practice_session(session_id):
 
         correct_count = 0
         wrong_count = 0
+        earned_score = 0.0
+        total_score = 0.0
+        knowledge_stats = {}
         results = []
         for qid in question_ids:
             question = question_map.get(qid)
@@ -505,6 +530,20 @@ def submit_practice_session(session_id):
                 correct_count += 1
             else:
                 wrong_count += 1
+            question_score = float(question.get("score") or 0)
+            total_score += question_score
+            if is_correct:
+                earned_score += question_score
+            knowledge_point = (question.get("knowledge_point") or "未分类知识点").strip()
+            point_stat = knowledge_stats.setdefault(
+                knowledge_point,
+                {"knowledgePoint": knowledge_point, "totalCount": 0, "correctCount": 0, "earnedScore": 0.0, "totalScore": 0.0},
+            )
+            point_stat["totalCount"] += 1
+            point_stat["totalScore"] += question_score
+            if is_correct:
+                point_stat["correctCount"] += 1
+                point_stat["earnedScore"] += question_score
 
             review_status = "mastered" if is_correct else "needs_review"
             cursor.execute(
@@ -522,6 +561,9 @@ def submit_practice_session(session_id):
                 "isCorrect": 1 if is_correct else 0,
                 "correctAnswer": correct_answer,
                 "analysis": question.get("analysis") or "",
+                "score": question_score,
+                "earnedScore": question_score if is_correct else 0,
+                "knowledgePoint": knowledge_point,
             })
 
         cursor.execute(
@@ -541,11 +583,134 @@ def submit_practice_session(session_id):
     ReviewPlanService().complete_practice_session(user["id"], session_id, results)
 
     accuracy = round(correct_count * 100 / len(results), 1) if results else 0
+    score_rate = round(earned_score * 100 / total_score, 1) if total_score else 0
+    knowledge_analysis = []
+    for item in knowledge_stats.values():
+        item["accuracyRate"] = round(item["correctCount"] * 100 / item["totalCount"], 1) if item["totalCount"] else 0
+        item["earnedScore"] = round(item["earnedScore"], 1)
+        item["totalScore"] = round(item["totalScore"], 1)
+        knowledge_analysis.append(item)
+    knowledge_analysis.sort(key=lambda item: (item["accuracyRate"], -item["totalCount"], item["knowledgePoint"]))
     return success({
         "sessionId": session_id,
         "totalCount": len(results),
         "correctCount": correct_count,
         "wrongCount": wrong_count,
         "accuracyRate": accuracy,
+        "earnedScore": round(earned_score, 1),
+        "totalScore": round(total_score, 1),
+        "scoreRate": score_rate,
+        "durationSeconds": int((datetime.now() - session["started_at"]).total_seconds()) if session.get("started_at") else 0,
+        "knowledgeAnalysis": knowledge_analysis,
         "answers": results,
     }, "答题卡已提交")
+
+
+@practice_bp.get("/practice-sessions/<int:session_id>/report")
+def get_practice_report(session_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    with db_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT ps.*, qb.name AS bank_name
+            FROM practice_sessions ps
+            LEFT JOIN question_banks qb ON qb.id=ps.question_bank_id
+            WHERE ps.id=%s AND ps.user_id=%s
+            LIMIT 1
+            """,
+            (session_id, user["id"]),
+        )
+        session = cursor.fetchone()
+        if not session:
+            return fail("答题记录不存在", 404)
+        if not session.get("finished_at"):
+            return fail("本次答题尚未提交")
+
+        cursor.execute(
+            """
+            SELECT
+              pa.question_id, pa.user_answer, pa.is_correct, pa.used_seconds,
+              q.type, q.stem, q.analysis, q.score, q.knowledge_point
+            FROM practice_answers pa
+            JOIN questions q ON q.id=pa.question_id
+            WHERE pa.session_id=%s AND pa.user_id=%s
+            ORDER BY pa.id
+            """,
+            (session_id, user["id"]),
+        )
+        answer_rows = cursor.fetchall()
+        question_ids = [row["question_id"] for row in answer_rows]
+        options_map, answers_map = _load_options_and_answers(cursor, question_ids)
+
+    earned_score = 0.0
+    total_score = 0.0
+    knowledge_stats = {}
+    answer_details = []
+    for index, row in enumerate(answer_rows, start=1):
+        score = float(row.get("score") or 0)
+        is_correct = int(row.get("is_correct") or 0)
+        total_score += score
+        if is_correct:
+            earned_score += score
+        knowledge_point = (row.get("knowledge_point") or "未分类知识点").strip()
+        point_stat = knowledge_stats.setdefault(
+            knowledge_point,
+            {"knowledgePoint": knowledge_point, "totalCount": 0, "correctCount": 0, "earnedScore": 0.0, "totalScore": 0.0},
+        )
+        point_stat["totalCount"] += 1
+        point_stat["totalScore"] += score
+        if is_correct:
+            point_stat["correctCount"] += 1
+            point_stat["earnedScore"] += score
+        correct_answer = "；".join(_answer_texts(answers_map.get(row["question_id"], [])))
+        correct_keys = [
+            option["optionKey"]
+            for option in options_map.get(row["question_id"], [])
+            if int(option.get("isCorrect") or 0) == 1
+        ]
+        if correct_keys:
+            correct_answer = ",".join(correct_keys)
+        answer_details.append({
+            "questionId": int(row["question_id"]),
+            "seq": index,
+            "typeLabel": _type_label(row.get("type")),
+            "stem": row.get("stem") or "",
+            "userAnswer": row.get("user_answer") or "",
+            "isCorrect": is_correct,
+            "correctAnswer": correct_answer,
+            "analysis": row.get("analysis") or "",
+            "score": score,
+            "earnedScore": score if is_correct else 0,
+            "knowledgePoint": knowledge_point,
+        })
+
+    knowledge_analysis = []
+    for item in knowledge_stats.values():
+        item["accuracyRate"] = round(item["correctCount"] * 100 / item["totalCount"], 1) if item["totalCount"] else 0
+        item["earnedScore"] = round(item["earnedScore"], 1)
+        item["totalScore"] = round(item["totalScore"], 1)
+        knowledge_analysis.append(item)
+    knowledge_analysis.sort(key=lambda item: (item["accuracyRate"], -item["totalCount"], item["knowledgePoint"]))
+    total_count = int(session.get("total_count") or len(answer_details))
+    correct_count = int(session.get("correct_count") or 0)
+    config = _parse_json(session.get("filter_config"), {})
+    return success({
+        "sessionId": int(session["id"]),
+        "bankName": session.get("bank_name") or "模拟考试",
+        "mode": config.get("selected_mode") or session.get("mode"),
+        "totalCount": total_count,
+        "correctCount": correct_count,
+        "wrongCount": int(session.get("wrong_count") or 0),
+        "accuracyRate": round(correct_count * 100 / total_count, 1) if total_count else 0,
+        "earnedScore": round(earned_score, 1),
+        "totalScore": round(total_score, 1),
+        "scoreRate": round(earned_score * 100 / total_score, 1) if total_score else 0,
+        "durationSeconds": int(session.get("duration_seconds") or 0),
+        "startedAt": str(session.get("started_at") or ""),
+        "finishedAt": str(session.get("finished_at") or ""),
+        "knowledgeAnalysis": knowledge_analysis,
+        "answers": answer_details,
+    })

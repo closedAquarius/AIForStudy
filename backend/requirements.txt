@@ -5,3 +5,4 @@ zai-sdk
 cryptography
 pypdf
 openpyxl
+reportlab

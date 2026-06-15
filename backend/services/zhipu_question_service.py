@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from typing import Any
 
 from dotenv import load_dotenv
+from services.zhipu_client import ZhipuChatClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -101,14 +102,7 @@ class ZhipuQuestionService:
         return result
 
     def _call_zhipu(self, prompt: str) -> str:
-        try:
-            from zai import ZhipuAiClient
-        except ImportError as exc:
-            raise RuntimeError("Please install Zhipu SDK first: pip install zai") from exc
-
-        client = ZhipuAiClient(api_key=self.api_key)
-        response = client.chat.completions.create(
-            model=self.model,
+        return ZhipuChatClient(self.api_key, self.model).complete(
             messages=[
                 {
                     "role": "system",
@@ -116,18 +110,10 @@ class ZhipuQuestionService:
                 },
                 {"role": "user", "content": prompt},
             ],
-            thinking={"type": "enabled"},
+            thinking=True,
             max_tokens=65536,
             temperature=0.6,
         )
-
-        message = response.choices[0].message
-        content = getattr(message, "content", None)
-        if content is None and isinstance(message, dict):
-            content = message.get("content")
-        if not isinstance(content, str):
-            content = str(message)
-        return content
 
     def _build_prompt(
         self,

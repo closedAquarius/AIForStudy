@@ -35,6 +35,8 @@ struct PracticeExamPage {
   @State noteText: string = '';
   @State savingRecord: boolean = false;
   @State startedAtMillis: number = 0;
+  @State remainingSeconds: number = 0;
+  private countdownTimer: number = -1;
 
   aboutToAppear(): void {
     const params = router.getParams() as PracticeExamParams;
@@ -43,6 +45,10 @@ struct PracticeExamPage {
     }
     this.startedAtMillis = Date.now();
     this.loadSession();
+  }
+
+  aboutToDisappear(): void {
+    this.stopCountdown();
   }
 
   private getToken(): string {
@@ -109,6 +115,10 @@ struct PracticeExamPage {
 
         this.currentIndex = 0;
         this.syncCurrentQuestion();
+        if (result.data.mode === 'mock_exam' && result.data.durationMinutes > 0) {
+          this.remainingSeconds = result.data.durationMinutes * 60;
+          this.startCountdown();
+        }
       } else {
         this.message = result.message || '刷题会话加载失败';
       }
@@ -246,6 +256,33 @@ struct PracticeExamPage {
     return '⭐⭐⭐⭐⭐';
   }
 
+  private startCountdown(): void {
+    this.stopCountdown();
+    this.countdownTimer = setInterval(() => {
+      if (this.remainingSeconds <= 1) {
+        this.remainingSeconds = 0;
+        this.stopCountdown();
+        this.submitAnswers(true);
+        return;
+      }
+      this.remainingSeconds -= 1;
+    }, 1000);
+  }
+
+  private stopCountdown(): void {
+    if (this.countdownTimer >= 0) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = -1;
+    }
+  }
+
+  private formatDuration(seconds: number): string {
+    const safeSeconds = Math.max(0, seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const remain = safeSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remain.toString().padStart(2, '0')}`;
+  }
+
   private replaceQuestion(question: PracticeQuestionItem, isFavorite: number, note: string): void {
     if (!this.session) {
       return;
@@ -350,12 +387,37 @@ struct PracticeExamPage {
     return Math.max(0, Math.floor((Date.now() - this.startedAtMillis) / 1000));
   }
 
-  private async submitAnswers(): Promise<void> {
+  private confirmSubmit(): void {
+    if (!this.session || this.submitting) {
+      return;
+    }
+    const unanswered = this.session.questions.length - this.answeredCount();
+    AlertDialog.show({
+      title: this.session.mode === 'mock_exam' ? '确认交卷' : '确认提交',
+      message: unanswered > 0 ? `还有 ${unanswered} 道题未作答，确定现在提交吗？` : '所有题目均已作答，确定提交吗？',
+      autoCancel: true,
+      primaryButton: {
+        value: '继续答题',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.session.mode === 'mock_exam' ? '确认交卷' : '确认提交',
+        fontColor: '#EF4444',
+        action: () => {
+          this.submitAnswers(false);
+        }
+      }
+    });
+  }
+
+  private async submitAnswers(autoSubmitted: boolean): Promise<void> {
     if (!this.session || this.submitting) {
       return;
     }
 
     this.submitting = true;
+    this.stopCountdown();
     const payload: PracticeAnswerSubmitItem[] = [];
     const usedSeconds = this.elapsedSeconds();
     for (let i = 0; i < this.answers.length; i++) {
@@ -371,22 +433,33 @@ struct PracticeExamPage {
       if (result.success && result.data) {
         this.showAnswerCard = false;
         AlertDialog.show({
-          title: '提交成功',
-          message: `本次共 ${result.data.totalCount} 题，答对 ${result.data.correctCount} 题，答错 ${result.data.wrongCount} 题，正确率 ${result.data.accuracyRate}%`,
+          title: autoSubmitted ? '考试时间到，已自动交卷' : '交卷成功',
+          message: `得分 ${result.data.earnedScore}/${result.data.totalScore}，答对 ${result.data.correctCount} 题，正确率 ${result.data.accuracyRate}%`,
           autoCancel: false,
           alignment: DialogAlignment.Center,
           primaryButton: {
-            value: this.session.mode === 'daily_review' ? '返回今日学习' : '返回题库',
+            value: '查看成绩报告',
             action: () => {
-              router.back();
+              router.replaceUrl({
+                url: 'pages/PracticeReportPage',
+                params: {
+                  sessionId: this.sessionId.toString()
+                }
+              });
             }
           }
         });
       } else {
         this.message = result.message || '提交失败';
+        if (this.session.mode === 'mock_exam' && this.remainingSeconds > 0) {
+          this.startCountdown();
+        }
       }
     } catch (error) {
-      this.message = `提交失败：${(error as Error).message}`;
+        this.message = `提交失败：${(error as Error).message}`;
+      if (this.session.mode === 'mock_exam' && this.remainingSeconds > 0) {
+        this.startCountdown();
+      }
     } finally {
       this.submitting = false;
     }
@@ -640,7 +713,7 @@ struct PracticeExamPage {
         .backgroundColor('#2D75FF')
         .enabled(!this.submitting)
         .onClick(() => {
-          this.submitAnswers();
+          this.confirmSubmit();
         })
     }
     .width('100%')
@@ -662,6 +735,27 @@ struct PracticeExamPage {
           title: this.session ? this.session.bankName : '刷题',
           themeColor: '#2D75FF'
         })
+
+        if (this.session && this.session.mode === 'mock_exam') {
+          Row() {
+            Text('模拟考试')
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#B45309')
+
+            Blank()
+
+            Text(`剩余 ${this.formatDuration(this.remainingSeconds)}`)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.remainingSeconds <= 300 ? '#EF4444' : '#0B1B44')
+          }
+          .width('100%')
+          .height(44)
+          .padding({ left: 20, right: 20 })
+          .backgroundColor('#FFF7E6')
+          .border({ width: { bottom: 1 }, color: '#FDE7B2' })
+        }
 
         if (this.message.length > 0) {
           Text(this.message)
@@ -812,6 +906,7 @@ struct PracticeExamPage {
           .backgroundColor('#FFFFFF')
           .borderRadius({ topLeft: 18, topRight: 18 })
         }
+
         .width('100%')
         .height('100%')
         .backgroundColor('#66000000')

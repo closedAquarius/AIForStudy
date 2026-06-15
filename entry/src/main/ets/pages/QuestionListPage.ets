@@ -520,6 +520,21 @@ struct QuestionListPage {
       .onClick(() => {
         this.openImportDialog();
       })
+
+      Button('编辑')
+        .width(54)
+        .height(38)
+        .fontSize(12)
+        .fontColor('#B45309')
+        .backgroundColor('#FFF7E6')
+        .borderRadius(8)
+        .margin({ left: 6 })
+        .onClick(() => {
+          router.pushUrl({
+            url: 'pages/QuestionEditorPage',
+            params: { bankId: this.bankId.toString() }
+          });
+        })
     }
     .width('100%')
     .height(86)

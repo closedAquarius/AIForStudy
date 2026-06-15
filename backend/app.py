@@ -3,6 +3,7 @@ import json
 import uuid
 import tempfile
 import smtplib
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from werkzeug.utils import secure_filename
 
 from db import db_cursor
 from services.diary_service import DiaryService
-from services.ai_learning_service import AiLearningService, AiProviderBusyError
+from services.diary_insight_service import DiaryInsightService
+from services.ai_learning_service import AiLearningService
+from services.zhipu_client import AiProviderError, AiProviderBusyError
 from services.document_text_extractor import DocumentTextExtractor
 from services.question_persistence_service import QuestionPersistenceService
 from services.zhipu_question_service import ZhipuQuestionService
@@ -24,6 +27,7 @@ from practice_api import practice_bp
 from question_record_api import question_record_bp
 from knowledge_base_api import knowledge_base_bp
 from review_plan_api import review_plan_bp
+from knowledge_graph_api import knowledge_graph_bp
 
 
 
@@ -33,6 +37,7 @@ app.register_blueprint(practice_bp, url_prefix="/api")
 app.register_blueprint(question_record_bp, url_prefix="/api")
 app.register_blueprint(knowledge_base_bp, url_prefix="/api")
 app.register_blueprint(review_plan_bp, url_prefix="/api")
+app.register_blueprint(knowledge_graph_bp, url_prefix="/api")
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -57,6 +62,10 @@ def optional_int(value):
     if value is None or value == "":
         return None
     return int(value)
+
+
+def ai_provider_failure(exc):
+    return fail(str(exc), getattr(exc, "status_code", 503))
 
 
 def to_diary_entry(row):
@@ -531,6 +540,31 @@ def list_diary_entries():
     return success(entries)
 
 
+def refresh_diary_insight(user_id, use_ai=False):
+    try:
+        DiaryInsightService().refresh(user_id, use_ai=use_ai)
+    except Exception:
+        app.logger.exception("refresh diary insight failed")
+
+
+def refresh_diary_insight_after_change(user_id):
+    refresh_diary_insight(user_id, use_ai=False)
+    threading.Thread(
+        target=refresh_diary_insight,
+        args=(user_id, True),
+        daemon=True,
+    ).start()
+
+
+@app.get("/api/diary/insight")
+def get_diary_insight():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    return success(DiaryInsightService().get_latest(user["id"]))
+
+
 @app.post("/api/diary/create")
 def create_diary_entry():
     user, error_response = require_current_user()
@@ -600,6 +634,7 @@ def create_diary_entry():
         )
         row = cursor.fetchone()
 
+    refresh_diary_insight_after_change(user["id"])
     return success(to_diary_entry(row), "学习日记保存成功", 201)
 
 
@@ -645,6 +680,7 @@ def update_diary_entry(entry_id):
 
     if result is None:
         return fail("日记不存在或无权修改", 404)
+    refresh_diary_insight_after_change(user["id"])
     return success(result, "学习日记更新成功")
 
 
@@ -657,6 +693,7 @@ def delete_diary_entry(entry_id):
     deleted = DiaryService().delete_entry(entry_id, user["id"])
     if not deleted:
         return fail("日记不存在或无权删除", 404)
+    refresh_diary_insight_after_change(user["id"])
     return success(None, "学习日记已删除")
 
 
@@ -676,6 +713,8 @@ def polish_diary_content():
         polished = DiaryService().polish_content(content)
     except ValueError as exc:
         return fail(str(exc))
+    except AiProviderError as exc:
+        return ai_provider_failure(exc)
     except RuntimeError as exc:
         return fail(str(exc), 500)
     except Exception as exc:
@@ -768,7 +807,9 @@ def ai_learning_chat():
     except ValueError as exc:
         return fail(str(exc), 400)
     except AiProviderBusyError as exc:
-        return fail(str(exc), 429)
+        return ai_provider_failure(exc)
+    except AiProviderError as exc:
+        return ai_provider_failure(exc)
     except RuntimeError as exc:
         return fail(str(exc), 500)
     except Exception as exc:
@@ -793,8 +834,8 @@ def ai_learning_explain_question():
     except ValueError as exc:
         return fail(str(exc), 400)
     except Exception as exc:
-        if isinstance(exc, AiProviderBusyError):
-            return fail(str(exc), 429)
+        if isinstance(exc, AiProviderError):
+            return ai_provider_failure(exc)
         app.logger.exception("ai learning explain question failed")
         return fail(f"错题讲解失败: {exc}", 500)
 
@@ -814,8 +855,8 @@ def ai_learning_diary_plan():
     except ValueError as exc:
         return fail(str(exc), 400)
     except Exception as exc:
-        if isinstance(exc, AiProviderBusyError):
-            return fail(str(exc), 429)
+        if isinstance(exc, AiProviderError):
+            return ai_provider_failure(exc)
         app.logger.exception("ai learning diary plan failed")
         return fail(f"学习建议生成失败: {exc}", 500)
 
@@ -858,6 +899,8 @@ def generate_questions_from_document_text():
         return success(result, "AI 出题成功")
     except ValueError as exc:
         return fail(str(exc), 400)
+    except AiProviderError as exc:
+        return ai_provider_failure(exc)
     except RuntimeError as exc:
         return fail(str(exc), 500)
     except Exception as exc:
@@ -941,6 +984,8 @@ def generate_questions_from_uploaded_file():
         return success(result, "文档解析、AI 出题并保存成功" if save_to_db else "文档解析和 AI 出题成功")
     except ValueError as exc:
         return fail(str(exc), 200)
+    except AiProviderError as exc:
+        return ai_provider_failure(exc)
     except RuntimeError as exc:
         return fail(str(exc), 200)
     except Exception as exc:

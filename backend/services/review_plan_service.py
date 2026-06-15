@@ -85,6 +85,77 @@ class ReviewPlanService:
             )
         return {"sessionId": session_id, "planId": plan_id}
 
+    def regenerate_today_plan(self, user_id: int) -> dict[str, Any]:
+        today = date.today()
+        with db_cursor(commit=True) as cursor:
+            plan = self._find_plan(cursor, user_id, today)
+            if plan and (
+                plan.get("status") == "in_progress"
+                or int(plan.get("practice_session_id") or 0) > 0
+            ):
+                raise ValueError("今日学习已经开始，不能重新生成任务")
+            if plan:
+                cursor.execute(
+                    "DELETE FROM daily_review_plans WHERE id=%s AND user_id=%s",
+                    (plan["id"], user_id),
+                )
+            self._sync_wrong_schedules(cursor, user_id, today)
+            plan_id = self._create_plan(cursor, user_id, today)
+            plan = self._find_plan_by_id(cursor, plan_id)
+            tasks = self._load_tasks(cursor, plan_id)
+        return self._serialize_plan(plan, tasks, self._learning_streak(user_id))
+
+    def update_task(self, user_id: int, task_id: int, action: str) -> dict[str, Any]:
+        today = date.today()
+        with db_cursor(commit=True) as cursor:
+            cursor.execute(
+                """
+                SELECT drt.*, drp.user_id, drp.status AS plan_status,
+                       drp.practice_session_id, drp.plan_date
+                FROM daily_review_tasks drt
+                JOIN daily_review_plans drp ON drp.id=drt.plan_id
+                WHERE drt.id=%s AND drp.user_id=%s AND drp.plan_date=%s
+                LIMIT 1
+                """,
+                (task_id, user_id, today),
+            )
+            task = cursor.fetchone()
+            if not task:
+                raise LookupError("今日任务不存在")
+            if task.get("plan_status") == "in_progress" or int(task.get("practice_session_id") or 0) > 0:
+                raise ValueError("今日学习已经开始，不能再调整任务")
+            if task.get("status") == "completed":
+                raise ValueError("已完成任务不能调整")
+
+            postponed_to = None
+            if action == "skip":
+                status = "skipped"
+            elif action == "postpone":
+                status = "postponed"
+                postponed_to = today + timedelta(days=1)
+                cursor.execute(
+                    """
+                    INSERT INTO review_schedules
+                      (user_id, question_id, review_stage, next_review_date,
+                       last_result, consecutive_correct, status)
+                    VALUES (%s, %s, 0, %s, 'unknown', 0, 'active')
+                    ON DUPLICATE KEY UPDATE
+                      next_review_date=VALUES(next_review_date), status='active'
+                    """,
+                    (user_id, task["question_id"], postponed_to),
+                )
+            else:
+                status = "pending"
+
+            cursor.execute(
+                "UPDATE daily_review_tasks SET status=%s, postponed_to=%s WHERE id=%s",
+                (status, postponed_to, task_id),
+            )
+            self._refresh_plan_counts(cursor, int(task["plan_id"]))
+            plan = self._find_plan_by_id(cursor, int(task["plan_id"]))
+            tasks = self._load_tasks(cursor, int(task["plan_id"]))
+        return self._serialize_plan(plan, tasks, self._learning_streak(user_id))
+
     def complete_practice_session(
         self,
         user_id: int,
@@ -125,29 +196,37 @@ class ReviewPlanService:
                 )
                 self._advance_schedule(cursor, user_id, question_id, is_correct == 1, today)
 
-            cursor.execute(
-                """
-                SELECT COUNT(*) AS total_count,
-                       COALESCE(SUM(status='completed'), 0) AS completed_count
-                FROM daily_review_tasks
-                WHERE plan_id=%s
-                """,
-                (plan_id,),
-            )
-            counts = cursor.fetchone() or {}
-            total_count = int(counts.get("total_count") or 0)
-            completed_count = int(counts.get("completed_count") or 0)
-            completed = total_count > 0 and completed_count >= total_count
-            cursor.execute(
-                """
-                UPDATE daily_review_plans
-                SET completed_count=%s,
-                    status=%s,
-                    completed_at=CASE WHEN %s=1 THEN NOW() ELSE completed_at END
-                WHERE id=%s
-                """,
-                (completed_count, "completed" if completed else "in_progress", 1 if completed else 0, plan_id),
-            )
+            self._refresh_plan_counts(cursor, plan_id, in_progress=True)
+
+    def _refresh_plan_counts(self, cursor, plan_id: int, in_progress: bool = False) -> None:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total_count,
+                   COALESCE(SUM(status='completed'), 0) AS completed_count,
+                   COALESCE(SUM(status='pending'), 0) AS pending_count
+            FROM daily_review_tasks
+            WHERE plan_id=%s
+            """,
+            (plan_id,),
+        )
+        counts = cursor.fetchone() or {}
+        pending_count = int(counts.get("pending_count") or 0)
+        status = "completed" if pending_count == 0 else ("in_progress" if in_progress else "pending")
+        cursor.execute(
+            """
+            UPDATE daily_review_plans
+            SET target_count=%s, completed_count=%s, status=%s,
+                completed_at=CASE WHEN %s=0 THEN NOW() ELSE NULL END
+            WHERE id=%s
+            """,
+            (
+                int(counts.get("total_count") or 0),
+                int(counts.get("completed_count") or 0),
+                status,
+                pending_count,
+                plan_id,
+            ),
+        )
 
     def _sync_wrong_schedules(self, cursor, user_id: int, today: date) -> None:
         cursor.execute(
@@ -177,12 +256,17 @@ class ReviewPlanService:
 
         remaining = max(0, target_count - len(due_rows))
         weak_rows = self._weak_knowledge_questions(cursor, user_id, selected_ids, remaining)
-        tasks = due_rows + weak_rows
+        selected_ids.update(int(row["question_id"]) for row in weak_rows)
+        remaining = max(0, target_count - len(due_rows) - len(weak_rows))
+        favorite_rows = self._favorite_questions(cursor, user_id, selected_ids, remaining)
+        tasks = list(due_rows) + list(weak_rows) + list(favorite_rows)
 
         wrong_count = sum(1 for row in tasks if row["source_type"] == "wrong_question")
-        weak_count = len(tasks) - wrong_count
+        weak_count = sum(1 for row in tasks if row["source_type"] == "weak_knowledge")
+        favorite_count = sum(1 for row in tasks if row["source_type"] == "favorite")
         reason = (
-            f"根据 {wrong_count} 道到期错题和 {weak_count} 道薄弱知识点题目生成。"
+            f"根据 {wrong_count} 道到期错题、{weak_count} 道薄弱知识点题目"
+            f"和 {favorite_count} 道收藏题生成。"
             f"{mood_summary}"
         )
         cursor.execute(
@@ -327,6 +411,39 @@ class ReviewPlanService:
         )
         return cursor.fetchall()
 
+    def _favorite_questions(
+        self,
+        cursor,
+        user_id: int,
+        excluded_ids: set[int],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
+        params: list[Any] = [user_id, user_id]
+        exclude_sql = ""
+        if excluded_ids:
+            exclude_sql = f" AND q.id NOT IN ({','.join(['%s'] * len(excluded_ids))}) "
+            params.extend(sorted(excluded_ids))
+        params.append(limit)
+        cursor.execute(
+            f"""
+            SELECT q.id AS question_id, q.knowledge_point,
+                   'favorite' AS source_type
+            FROM user_question_records uqr
+            JOIN questions q ON q.id=uqr.question_id AND q.status='active'
+            JOIN question_banks qb ON qb.id=q.question_bank_id
+            WHERE uqr.user_id=%s
+              AND uqr.is_favorite=1
+              AND (qb.owner_user_id=%s OR qb.visibility='public')
+              {exclude_sql}
+            ORDER BY uqr.updated_at DESC, q.id
+            LIMIT %s
+            """,
+            params,
+        )
+        return cursor.fetchall()
+
     def _advance_schedule(
         self,
         cursor,
@@ -423,7 +540,7 @@ class ReviewPlanService:
         cursor.execute(
             """
             SELECT drt.id, drt.question_id, drt.source_type, drt.knowledge_point,
-                   drt.sort_order, drt.status, drt.is_correct,
+                   drt.sort_order, drt.status, drt.is_correct, drt.postponed_to,
                    q.type, q.stem, q.difficulty, qb.name AS bank_name
             FROM daily_review_tasks drt
             JOIN questions q ON q.id=drt.question_id
@@ -441,7 +558,7 @@ class ReviewPlanService:
                 """
                 SELECT plan_date
                 FROM daily_review_plans
-                WHERE user_id=%s AND status='completed' AND target_count>0
+                WHERE user_id=%s AND status='completed' AND completed_count>0
                 ORDER BY plan_date DESC
                 LIMIT 180
                 """,
@@ -464,12 +581,24 @@ class ReviewPlanService:
         tasks: list[dict[str, Any]],
         streak: int,
     ) -> dict[str, Any]:
+        pending_count = sum(1 for row in tasks if row["status"] == "pending")
+        skipped_count = sum(1 for row in tasks if row["status"] == "skipped")
+        postponed_count = sum(1 for row in tasks if row["status"] == "postponed")
         return {
             "id": int(plan["id"]),
             "planDate": str(plan["plan_date"]),
             "targetCount": int(plan.get("target_count") or 0),
             "completedCount": int(plan.get("completed_count") or 0),
             "totalCount": len(tasks),
+            "handledCount": len(tasks) - pending_count,
+            "pendingCount": pending_count,
+            "skippedCount": skipped_count,
+            "postponedCount": postponed_count,
+            "sourceStats": {
+                "wrongQuestion": sum(1 for row in tasks if row["source_type"] == "wrong_question"),
+                "weakKnowledge": sum(1 for row in tasks if row["source_type"] == "weak_knowledge"),
+                "favorite": sum(1 for row in tasks if row["source_type"] == "favorite"),
+            },
             "moodAdjustment": int(plan.get("mood_adjustment") or 0),
             "moodSummary": plan.get("mood_summary") or "",
             "generationReason": plan.get("generation_reason") or "",
@@ -483,6 +612,7 @@ class ReviewPlanService:
                     "sourceType": row["source_type"],
                     "knowledgePoint": row.get("knowledge_point") or "",
                     "status": row["status"],
+                    "postponedTo": str(row.get("postponed_to") or ""),
                     "isCorrect": None if row.get("is_correct") is None else int(row["is_correct"]),
                     "type": row.get("type") or "",
                     "stem": row.get("stem") or "",

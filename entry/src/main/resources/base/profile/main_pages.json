@@ -6,7 +6,9 @@
     "pages/PracticePage",
     "pages/QuestionBankDetailPage",
     "pages/QuestionListPage",
+    "pages/QuestionEditorPage",
     "pages/PracticeExamPage",
+    "pages/PracticeReportPage",
     "pages/SetQuestionPage",
     "pages/DiaryPage",
     "pages/AiLearningPage",
@@ -14,6 +16,7 @@
     "pages/WrongQuestionBookPage",
     "pages/FavoriteQuestionPage",
     "pages/KnowledgeBasePage",
+    "pages/KnowledgeGraphPage",
     "pages/TodayStudyPage"
   ]
 }

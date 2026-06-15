@@ -10,16 +10,13 @@ from dotenv import load_dotenv
 from db import db_cursor
 from services.diary_service import DiaryService
 from services.document_text_extractor import DocumentTextExtractor
+from services.zhipu_client import AiProviderBusyError, ZhipuChatClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 LOAD_DIR = BACKEND_DIR / "uploads"
 
 load_dotenv(BACKEND_DIR / ".env")
 load_dotenv(BACKEND_DIR / ".env.example", override=False)
-
-
-class AiProviderBusyError(RuntimeError):
-    """Raised when the upstream model is temporarily overloaded or rate limited."""
 
 
 class AiLearningService:
@@ -586,36 +583,12 @@ class AiLearningService:
         )
 
     def _call_zhipu(self, messages: list[dict[str, str]]) -> str:
-        if not self.api_key:
-            raise ValueError("ZHIPU_API_KEY is not configured")
-
-        try:
-            from zai import ZhipuAiClient
-        except ImportError as exc:
-            raise RuntimeError("Please install Zhipu SDK first: pip install zai") from exc
-
-        client = ZhipuAiClient(api_key=self.api_key)
-        try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                thinking={"type": "enabled"},
-                max_tokens=8192,
-                temperature=0.6,
-            )
-        except Exception as exc:
-            error_text = str(exc)
-            error_name = exc.__class__.__name__
-            if "APIReachLimitError" in error_name or "429" in error_text or "1305" in error_text:
-                raise AiProviderBusyError("AI 模型当前访问量过大，请稍后再试。") from exc
-            raise
-        message = response.choices[0].message
-        content = getattr(message, "content", None)
-        if content is None and isinstance(message, dict):
-            content = message.get("content")
-        if not isinstance(content, str):
-            content = str(message)
-        return content.strip()
+        return ZhipuChatClient(self.api_key, self.model).complete(
+            messages=messages,
+            max_tokens=8192,
+            temperature=0.6,
+            thinking=True,
+        )
 
     def generate_answer(self, messages: list[dict[str, str]]) -> str:
         return self._call_zhipu(messages)

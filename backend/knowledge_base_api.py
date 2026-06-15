@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from api_utils import fail, require_current_user, success
-from services.ai_learning_service import AiProviderBusyError
+from services.zhipu_client import AiProviderError
 from services.knowledge_base_service import KnowledgeBaseService
 
 
@@ -105,8 +105,8 @@ def ask_knowledge_base(base_id):
         return fail(str(exc), 404)
     except ValueError as exc:
         return fail(str(exc))
-    except AiProviderBusyError as exc:
-        return fail(str(exc), 429)
+    except AiProviderError as exc:
+        return fail(str(exc), exc.status_code)
     except Exception as exc:
         return fail(f"知识库问答失败：{exc}", 500)
 

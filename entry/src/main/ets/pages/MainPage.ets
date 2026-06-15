@@ -429,6 +429,27 @@ struct MainPage {
     })
   }
 
+  @Builder
+  KnowledgeGraphBar() {
+    Row({ space: 10 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle().width(36).height(36).fill('#ECFDF5')
+        Text('G').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#16805A')
+      }
+      Column({ space: 2 }) {
+        Text('知识图谱').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#0B1B44')
+        Text('查看知识结构、掌握程度与薄弱知识点').fontSize(11).fontColor('#64748B')
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+      Text('>').fontSize(20).fontColor('#16805A')
+    }
+    .width('100%').height(56).padding({ left: 14, right: 14 })
+    .margin({ left: 22, right: 22, top: 8 })
+    .backgroundColor('#F9FFFFFF').borderRadius(12)
+    .border({ width: 1, color: '#C8EEDB' })
+    .onClick(() => this.goPage('pages/KnowledgeGraphPage'))
+  }
+
   build() {
     Stack() {
       Image($r('app.media.main_background2'))
@@ -453,6 +474,7 @@ struct MainPage {
         this.WrongQuestionBookBar()
         this.FavoriteQuestionBar()
         this.KnowledgeBaseBar()
+        this.KnowledgeGraphBar()
 
         Blank()
           .layoutWeight(1)

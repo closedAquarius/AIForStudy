@@ -10,6 +10,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS ai_messages;
 DROP TABLE IF EXISTS ai_conversations;
 DROP TABLE IF EXISTS learning_analytics;
+DROP TABLE IF EXISTS diary_insight_reports;
 DROP TABLE IF EXISTS diary_ai_reports;
 DROP TABLE IF EXISTS diary_entries;
 DROP TABLE IF EXISTS daily_review_tasks;
@@ -17,11 +18,15 @@ DROP TABLE IF EXISTS daily_review_plans;
 DROP TABLE IF EXISTS review_schedules;
 DROP TABLE IF EXISTS practice_answers;
 DROP TABLE IF EXISTS practice_sessions;
+DROP TABLE IF EXISTS knowledge_relations;
+DROP TABLE IF EXISTS knowledge_nodes;
 DROP TABLE IF EXISTS user_question_records;
 DROP TABLE IF EXISTS question_tags;
 DROP TABLE IF EXISTS question_answers;
 DROP TABLE IF EXISTS question_options;
 DROP TABLE IF EXISTS questions;
+DROP TABLE IF EXISTS question_bank_share_members;
+DROP TABLE IF EXISTS question_bank_shares;
 DROP TABLE IF EXISTS question_import_rows;
 DROP TABLE IF EXISTS question_imports;
 DROP TABLE IF EXISTS generated_papers;
@@ -32,6 +37,7 @@ DROP TABLE IF EXISTS knowledge_bases;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS question_banks;
+DROP TABLE IF EXISTS question_bank_folders;
 DROP TABLE IF EXISTS subjects;
 DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS password_reset_codes;
@@ -86,10 +92,25 @@ CREATE TABLE subjects (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE question_bank_folders (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_question_bank_folders_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uk_question_bank_folders_user_name (user_id, name),
+  INDEX idx_question_bank_folders_user_sort (user_id, sort_order, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE question_banks (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   owner_user_id BIGINT UNSIGNED NULL,
   subject_id BIGINT UNSIGNED NULL,
+  folder_id BIGINT UNSIGNED NULL,
   name VARCHAR(128) NOT NULL,
   description TEXT NULL,
   visibility ENUM('private', 'class', 'public') NOT NULL DEFAULT 'private',
@@ -102,8 +123,45 @@ CREATE TABLE question_banks (
   CONSTRAINT fk_question_banks_subject
     FOREIGN KEY (subject_id) REFERENCES subjects(id)
     ON DELETE SET NULL,
+  CONSTRAINT fk_question_banks_folder
+    FOREIGN KEY (folder_id) REFERENCES question_bank_folders(id)
+    ON DELETE SET NULL,
   INDEX idx_question_banks_owner (owner_user_id),
-  INDEX idx_question_banks_subject (subject_id)
+  INDEX idx_question_banks_subject (subject_id),
+  INDEX idx_question_banks_folder (folder_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE question_bank_shares (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  question_bank_id BIGINT UNSIGNED NOT NULL,
+  owner_user_id BIGINT UNSIGNED NOT NULL,
+  share_code VARCHAR(20) NOT NULL,
+  status ENUM('active', 'disabled') NOT NULL DEFAULT 'active',
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_question_bank_shares_bank
+    FOREIGN KEY (question_bank_id) REFERENCES question_banks(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_question_bank_shares_owner
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uk_question_bank_shares_code (share_code),
+  INDEX idx_question_bank_shares_owner_bank (owner_user_id, question_bank_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE question_bank_share_members (
+  share_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (share_id, user_id),
+  CONSTRAINT fk_question_bank_share_members_share
+    FOREIGN KEY (share_id) REFERENCES question_bank_shares(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_question_bank_share_members_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  INDEX idx_question_bank_share_members_user (user_id, joined_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE tags (
@@ -391,6 +449,36 @@ CREATE TABLE practice_answers (
   INDEX idx_practice_answers_user_correct (user_id, is_correct, answered_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE knowledge_nodes (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  owner_user_id BIGINT UNSIGNED NOT NULL,
+  question_bank_id BIGINT UNSIGNED NOT NULL,
+  node_type ENUM('course', 'knowledge') NOT NULL DEFAULT 'knowledge',
+  name VARCHAR(255) NOT NULL,
+  description VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_knowledge_nodes_user FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_knowledge_nodes_bank FOREIGN KEY (question_bank_id) REFERENCES question_banks(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_knowledge_node_bank_type_name (question_bank_id, node_type, name),
+  INDEX idx_knowledge_nodes_owner (owner_user_id, question_bank_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE knowledge_relations (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  question_bank_id BIGINT UNSIGNED NOT NULL,
+  source_node_id BIGINT UNSIGNED NOT NULL,
+  target_node_id BIGINT UNSIGNED NOT NULL,
+  relation_type ENUM('contains', 'related', 'prerequisite') NOT NULL DEFAULT 'related',
+  weight DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_knowledge_relations_bank FOREIGN KEY (question_bank_id) REFERENCES question_banks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_knowledge_relations_source FOREIGN KEY (source_node_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_knowledge_relations_target FOREIGN KEY (target_node_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_knowledge_relation (source_node_id, target_node_id, relation_type),
+  INDEX idx_knowledge_relations_bank (question_bank_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE review_schedules (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -440,12 +528,13 @@ CREATE TABLE daily_review_tasks (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   plan_id BIGINT UNSIGNED NOT NULL,
   question_id BIGINT UNSIGNED NOT NULL,
-  source_type ENUM('wrong_question', 'weak_knowledge') NOT NULL,
+  source_type ENUM('wrong_question', 'weak_knowledge', 'favorite') NOT NULL,
   knowledge_point VARCHAR(255) NULL,
   sort_order INT UNSIGNED NOT NULL DEFAULT 0,
-  status ENUM('pending', 'completed') NOT NULL DEFAULT 'pending',
+  status ENUM('pending', 'completed', 'skipped', 'postponed') NOT NULL DEFAULT 'pending',
   is_correct TINYINT(1) NULL,
   completed_at DATETIME NULL,
+  postponed_to DATE NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_daily_review_tasks_plan
     FOREIGN KEY (plan_id) REFERENCES daily_review_plans(id)
@@ -485,6 +574,32 @@ CREATE TABLE diary_ai_reports (
   CONSTRAINT fk_diary_ai_reports_entry
     FOREIGN KEY (diary_entry_id) REFERENCES diary_entries(id)
     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE diary_insight_reports (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  source_diary_count INT UNSIGNED NOT NULL DEFAULT 0,
+  average_mood DECIMAL(4,1) NOT NULL DEFAULT 0,
+  answer_count INT UNSIGNED NOT NULL DEFAULT 0,
+  accuracy_rate DECIMAL(5,1) NOT NULL DEFAULT 0,
+  study_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+  mood_label VARCHAR(60) NOT NULL DEFAULT '',
+  mood_trend TEXT NULL,
+  learning_status TEXT NULL,
+  summary TEXT NULL,
+  goals JSON NULL,
+  suggestions JSON NULL,
+  weak_points JSON NULL,
+  risk_level ENUM('low', 'medium', 'high') NOT NULL DEFAULT 'low',
+  is_ai_generated TINYINT(1) NOT NULL DEFAULT 0,
+  raw_result JSON NULL,
+  generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_diary_insight_reports_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uk_diary_insight_reports_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE learning_analytics (

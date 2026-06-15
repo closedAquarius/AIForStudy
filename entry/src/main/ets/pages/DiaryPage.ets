@@ -6,8 +6,10 @@ import {
   updateStudyDiary,
   deleteStudyDiary,
   polishDiary,
+  getDiaryInsight,
   CommonResult,
-  StudyDiarySaveData
+  StudyDiarySaveData,
+  DiaryInsightData
 } from '../common/ApiClient';
 
 interface DiaryEntry {
@@ -115,6 +117,21 @@ struct DiaryPage {
   @State calendarSidebarOffset: number = 80;
   @State calendarMaskOpacity: number = 0;
   @State highlightEntryId: number = 0;
+  @State insightLoading: boolean = false;
+  @State insightHasData: boolean = false;
+  @State insightMoodLabel: string = '';
+  @State insightMoodTrend: string = '';
+  @State insightLearningStatus: string = '';
+  @State insightSummary: string = '';
+  @State insightGoals: string[] = [];
+  @State insightSuggestions: string[] = [];
+  @State insightDiaryCount: number = 0;
+  @State insightAverageMood: number = 0;
+  @State insightAnswerCount: number = 0;
+  @State insightAccuracyRate: number = 0;
+  @State insightStudyMinutes: number = 0;
+  @State insightAiGenerated: boolean = false;
+  @State insightMessage: string = '';
 
   private allEntries: DiaryEntry[] = [];
   private diarySource: DiaryEntryDataSource = new DiaryEntryDataSource();
@@ -134,6 +151,7 @@ struct DiaryPage {
     }
     this.selectedDate = this.parseDateText(this.entryDate);
     this.loadHistory(false);
+    this.loadInsight();
   }
 
   private getToken(): string {
@@ -283,6 +301,8 @@ struct DiaryPage {
         this.showDetail = false;
         this.historyMessage = '';
         await this.loadHistory(false);
+        await this.loadInsight();
+        this.scheduleInsightReload();
       } else {
         this.historyMessage = result.message || '删除失败';
       }
@@ -291,6 +311,51 @@ struct DiaryPage {
     } finally {
       this.deleting = false;
     }
+  }
+
+  private applyInsight(data: DiaryInsightData): void {
+    this.insightHasData = data.hasData ?? false;
+    this.insightMoodLabel = data.moodLabel ?? '';
+    this.insightMoodTrend = data.moodTrend ?? '';
+    this.insightLearningStatus = data.learningStatus ?? '';
+    this.insightSummary = data.summary ?? '';
+    this.insightGoals = data.goals ?? [];
+    this.insightSuggestions = data.suggestions ?? [];
+    this.insightDiaryCount = Number(data.diaryCount ?? 0);
+    this.insightAverageMood = Number(data.averageMood ?? 0);
+    this.insightAnswerCount = Number(data.answerCount ?? 0);
+    this.insightAccuracyRate = Number(data.accuracyRate ?? 0);
+    this.insightStudyMinutes = Number(data.studyMinutes ?? 0);
+    this.insightAiGenerated = data.isAiGenerated ?? false;
+  }
+
+  private async loadInsight(): Promise<void> {
+    const token = this.getToken();
+    if (token.length === 0) {
+      this.insightHasData = false;
+      this.insightMessage = '登录后可生成学习状态分析';
+      return;
+    }
+
+    this.insightLoading = true;
+    try {
+      const result = await getDiaryInsight(token);
+      if (!result.success || !result.data) {
+        throw new Error(result.message || '学习洞察加载失败');
+      }
+      this.applyInsight(result.data);
+      this.insightMessage = '';
+    } catch (error) {
+      this.insightMessage = `学习洞察加载失败：${(error as Error).message}`;
+    } finally {
+      this.insightLoading = false;
+    }
+  }
+
+  private scheduleInsightReload(): void {
+    setTimeout(() => {
+      this.loadInsight();
+    }, 4500);
   }
 
   private async loadHistory(isRefresh: boolean): Promise<void> {
@@ -408,6 +473,8 @@ struct DiaryPage {
         }
         this.closeForm();
         await this.loadHistory(false);
+        await this.loadInsight();
+        this.scheduleInsightReload();
         return;
       }
 
@@ -861,87 +928,259 @@ struct DiaryPage {
   }
 
   @Builder
-  HistoryArea() {
-    Column({ space: 14 }) {
-      Row() {
-        Column({ space: 4 }) {
-          Text('历史日记')
-            .fontSize(20)
+  InsightMetric(value: string, label: string, color: string) {
+    Column({ space: 3 }) {
+      Text(value)
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(color)
+
+      Text(label)
+        .fontSize(11)
+        .fontColor('#7B8497')
+    }
+    .layoutWeight(1)
+    .height(58)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#F8FAFD')
+    .borderRadius(6)
+  }
+
+  @Builder
+  DiaryInsightCard() {
+    Column({ space: 12 }) {
+      Row({ space: 10 }) {
+        Text('AI')
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .width(30)
+          .height(24)
+          .textAlign(TextAlign.Center)
+          .backgroundColor('#7257E8')
+          .borderRadius(6)
+
+        Column({ space: 2 }) {
+          Text('AI 学习洞察')
+            .fontSize(17)
             .fontWeight(FontWeight.Bold)
             .fontColor('#0B1B44')
 
-          Text(this.historyCount > 0 ? `共 ${this.historyCount} 篇，按日期倒序排列` : '下拉可刷新历史记录')
-            .fontSize(12)
+          Text(this.insightAiGenerated ? '已结合近期日记与学习数据' : '正在根据近期记录持续更新')
+            .fontSize(11)
             .fontColor('#7B8497')
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        if (this.historyLoading) {
+        if (this.insightLoading) {
           LoadingProgress()
-            .width(24)
-            .height(24)
-        }
-      }
-      .width('100%')
-
-      Row({ space: 8 }) {
-        TextInput({ placeholder: '搜索日记标题...', text: this.searchKeyword })
-          .height(40)
-          .layoutWeight(1)
-          .fontSize(14)
-          .fontColor('#0B1B44')
-          .backgroundColor('#FFFFFF')
-          .borderRadius(20)
-          .border({ width: 1, color: '#EEF2F7' })
-          .padding({ left: 16, right: 16 })
-          .onChange((value: string) => {
-            this.searchKeyword = value;
-            this.filterEntries();
-          })
-
-        if (this.searchKeyword.length > 0) {
-          Text('✕')
-            .fontSize(16)
-            .fontColor('#9CA3AF')
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .borderRadius(16)
-            .backgroundColor('#F3F0FF')
+            .width(22)
+            .height(22)
+            .color('#7257E8')
+        } else {
+          Button('↻')
+            .width(34)
+            .height(34)
+            .fontSize(18)
+            .fontColor('#7257E8')
+            .backgroundColor('#F0EDFF')
+            .borderRadius(6)
             .onClick(() => {
-              this.searchKeyword = '';
-              this.filterEntries();
+              this.loadInsight();
             })
         }
       }
       .width('100%')
 
-      if (this.historyMessage.length > 0) {
-        Text(this.historyMessage)
+      if (!this.insightHasData) {
+        Text(this.insightMessage.length > 0 ? this.insightMessage : '写下第一篇学习日记后，这里会分析心情、学习状态并生成近期目标。')
           .width('100%')
           .fontSize(13)
-          .fontColor('#DC2626')
-          .textAlign(TextAlign.Center)
-      }
-
-      if (!this.historyLoading && this.historyCount === 0) {
-        this.EmptyHistory()
+          .lineHeight(20)
+          .fontColor(this.insightMessage.length > 0 ? '#DC2626' : '#667085')
       } else {
-        List({ space: 12, scroller: this.listScroller }) {
-          LazyForEach(this.diarySource, (entry: DiaryEntry) => {
-            ListItem() {
-              this.DiaryHistoryCard(entry)
-            }
-          }, (entry: DiaryEntry) => `${this.listVersion}-${entry.id}`)
+        Row({ space: 10 }) {
+          Column({ space: 3 }) {
+            Text('近期心情')
+              .fontSize(11)
+              .fontColor('#7B8497')
+
+            Text(this.insightMoodLabel)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#7257E8')
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+
+          Text(`${this.insightAverageMood.toFixed(1)} / 10`)
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#16A36A')
         }
         .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
+
+        Text(this.insightMoodTrend)
+          .width('100%')
+          .fontSize(13)
+          .lineHeight(20)
+          .fontColor('#46516A')
+
+        Text(this.insightLearningStatus)
+          .width('100%')
+          .fontSize(13)
+          .lineHeight(20)
+          .fontColor('#46516A')
+
+        Row({ space: 8 }) {
+          this.InsightMetric(`${this.insightDiaryCount}`, '近期日记', '#7257E8')
+          this.InsightMetric(`${this.insightAnswerCount}`, '近14天答题', '#2F73F3')
+          this.InsightMetric(`${this.insightAccuracyRate.toFixed(1)}%`, '正确率', '#16A36A')
+        }
+        .width('100%')
+
+        if (this.insightSummary.length > 0) {
+          Text(this.insightSummary)
+            .width('100%')
+            .fontSize(13)
+            .lineHeight(20)
+            .fontColor('#344054')
+            .padding(10)
+            .backgroundColor('#F8FAFD')
+            .borderRadius(6)
+        }
+
+        if (this.insightGoals.length > 0) {
+          Column({ space: 7 }) {
+            Text('未来几天的学习目标')
+              .width('100%')
+              .fontSize(14)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#0B1B44')
+
+            ForEach(this.insightGoals, (goal: string, index: number) => {
+              Row({ space: 8 }) {
+                Text(`${index + 1}`)
+                  .fontSize(11)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#FFFFFF')
+                  .width(20)
+                  .height(20)
+                  .textAlign(TextAlign.Center)
+                  .backgroundColor('#7257E8')
+                  .borderRadius(10)
+
+                Text(goal)
+                  .fontSize(13)
+                  .lineHeight(19)
+                  .fontColor('#344054')
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+            }, (goal: string, index: number) => `${index}-${goal}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
       }
     }
     .width('100%')
-    .layoutWeight(1)
+    .padding(16)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 1, color: '#E7E2FF' })
+  }
+
+  @Builder
+  HistoryArea() {
+    List({ space: 12, scroller: this.listScroller }) {
+      ListItem() {
+        Column({ space: 14 }) {
+          this.DiaryInsightCard()
+
+          Row() {
+            Column({ space: 4 }) {
+              Text('历史日记')
+                .fontSize(20)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#0B1B44')
+
+              Text(this.historyCount > 0 ? `共 ${this.historyCount} 篇，按日期倒序排列` : '下拉可刷新历史记录')
+                .fontSize(12)
+                .fontColor('#7B8497')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            if (this.historyLoading) {
+              LoadingProgress()
+                .width(24)
+                .height(24)
+            }
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            TextInput({ placeholder: '搜索日记标题...', text: this.searchKeyword })
+              .height(40)
+              .layoutWeight(1)
+              .fontSize(14)
+              .fontColor('#0B1B44')
+              .backgroundColor('#FFFFFF')
+              .borderRadius(20)
+              .border({ width: 1, color: '#EEF2F7' })
+              .padding({ left: 16, right: 16 })
+              .onChange((value: string) => {
+                this.searchKeyword = value;
+                this.filterEntries();
+              })
+
+            if (this.searchKeyword.length > 0) {
+              Text('✕')
+                .fontSize(16)
+                .fontColor('#9CA3AF')
+                .width(32)
+                .height(32)
+                .textAlign(TextAlign.Center)
+                .borderRadius(16)
+                .backgroundColor('#F3F0FF')
+                .onClick(() => {
+                  this.searchKeyword = '';
+                  this.filterEntries();
+                })
+            }
+          }
+          .width('100%')
+
+          if (this.historyMessage.length > 0) {
+            Text(this.historyMessage)
+              .width('100%')
+              .fontSize(13)
+              .fontColor('#DC2626')
+              .textAlign(TextAlign.Center)
+          }
+        }
+        .width('100%')
+      }
+
+      if (!this.historyLoading && this.historyCount === 0) {
+        ListItem() {
+          this.EmptyHistory()
+        }
+      } else {
+        LazyForEach(this.diarySource, (entry: DiaryEntry) => {
+          ListItem() {
+            this.DiaryHistoryCard(entry)
+          }
+        }, (entry: DiaryEntry) => `${this.listVersion}-${entry.id}`)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 16, right: 16, top: 16, bottom: 84 })
+    .scrollBar(BarState.Off)
   }
 
   @Builder
@@ -1521,11 +1760,7 @@ struct DiaryPage {
 
         Stack({ alignContent: Alignment.BottomEnd }) {
           Refresh({ refreshing: $$this.refreshing }) {
-            Column({ space: 16 }) {
-              this.HistoryArea()
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 16, bottom: 18 })
+            this.HistoryArea()
           }
           .width('100%')
           .height('100%')

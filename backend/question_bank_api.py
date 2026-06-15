@@ -1,9 +1,23 @@
 import json
 import os
 import tempfile
+import io
+import secrets
+import re
+from datetime import datetime
+from pathlib import Path
 
-from flask import Blueprint, request
-from openpyxl import load_workbook
+from flask import Blueprint, request, send_file
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.utils import secure_filename
 
 from db import db_cursor
@@ -11,6 +25,7 @@ from api_utils import success, fail, require_current_user
 
 
 question_bank_bp = Blueprint("question_bank_api", __name__)
+EXPORT_DIR = Path(__file__).resolve().parent / "exports"
 
 
 QUESTION_TYPE_LABELS = {
@@ -29,6 +44,8 @@ def to_bank_summary(row, current_user_id):
         "name": row["name"],
         "description": row.get("description") or "",
         "subjectName": row.get("subject_name") or "未分类",
+        "folderId": int(row.get("folder_id") or 0),
+        "folderName": row.get("folder_name") or "",
         "visibility": row.get("visibility") or "private",
         "sourceType": row.get("source_type") or "manual",
         "totalCount": int(row.get("total_count") or 0),
@@ -47,6 +64,7 @@ def fetch_bank_summary(cursor, bank_id, user_id):
           qb.id,
           qb.owner_user_id,
           qb.subject_id,
+          qb.folder_id,
           qb.name,
           qb.description,
           qb.visibility,
@@ -54,11 +72,13 @@ def fetch_bank_summary(cursor, bank_id, user_id):
           qb.created_at,
           qb.updated_at,
           s.name AS subject_name,
+          qbf.name AS folder_name,
           COUNT(DISTINCT q.id) AS total_count,
           COUNT(DISTINCT pa_done.question_id) AS practiced_count,
           COUNT(DISTINCT pa_wrong.question_id) AS wrong_count
         FROM question_banks qb
         LEFT JOIN subjects s ON s.id = qb.subject_id
+        LEFT JOIN question_bank_folders qbf ON qbf.id = qb.folder_id
         LEFT JOIN questions q
           ON q.question_bank_id = qb.id
          AND q.status = 'active'
@@ -70,13 +90,24 @@ def fetch_bank_summary(cursor, bank_id, user_id):
          AND pa_wrong.user_id = %s
          AND pa_wrong.is_correct = 0
         WHERE qb.id = %s
-          AND (qb.owner_user_id = %s OR qb.visibility IN ('public', 'class'))
+          AND (
+            qb.owner_user_id = %s OR qb.visibility IN ('public', 'class')
+            OR EXISTS (
+              SELECT 1
+              FROM question_bank_shares qbs
+              JOIN question_bank_share_members qbsm ON qbsm.share_id=qbs.id
+              WHERE qbs.question_bank_id=qb.id
+                AND qbs.status='active'
+                AND (qbs.expires_at IS NULL OR qbs.expires_at>NOW())
+                AND qbsm.user_id=%s
+            )
+          )
         GROUP BY
-          qb.id, qb.owner_user_id, qb.subject_id, qb.name, qb.description,
-          qb.visibility, qb.source_type, qb.created_at, qb.updated_at, s.name
+          qb.id, qb.owner_user_id, qb.subject_id, qb.folder_id, qb.name, qb.description,
+          qb.visibility, qb.source_type, qb.created_at, qb.updated_at, s.name, qbf.name
         LIMIT 1
         """,
-        (user_id, user_id, bank_id, user_id),
+        (user_id, user_id, bank_id, user_id, user_id),
     )
     return cursor.fetchone()
 
@@ -94,6 +125,7 @@ def list_question_banks():
               qb.id,
               qb.owner_user_id,
               qb.subject_id,
+              qb.folder_id,
               qb.name,
               qb.description,
               qb.visibility,
@@ -101,11 +133,13 @@ def list_question_banks():
               qb.created_at,
               qb.updated_at,
               s.name AS subject_name,
+              qbf.name AS folder_name,
               COUNT(DISTINCT q.id) AS total_count,
               COUNT(DISTINCT pa_done.question_id) AS practiced_count,
               COUNT(DISTINCT pa_wrong.question_id) AS wrong_count
             FROM question_banks qb
             LEFT JOIN subjects s ON s.id = qb.subject_id
+            LEFT JOIN question_bank_folders qbf ON qbf.id = qb.folder_id
             LEFT JOIN questions q
               ON q.question_bank_id = qb.id
              AND q.status = 'active'
@@ -118,12 +152,21 @@ def list_question_banks():
              AND pa_wrong.is_correct = 0
             WHERE qb.owner_user_id = %s
                OR qb.visibility IN ('public', 'class')
+               OR EXISTS (
+                 SELECT 1
+                 FROM question_bank_shares qbs
+                 JOIN question_bank_share_members qbsm ON qbsm.share_id=qbs.id
+                 WHERE qbs.question_bank_id=qb.id
+                   AND qbs.status='active'
+                   AND (qbs.expires_at IS NULL OR qbs.expires_at>NOW())
+                   AND qbsm.user_id=%s
+               )
             GROUP BY
-              qb.id, qb.owner_user_id, qb.subject_id, qb.name, qb.description,
-              qb.visibility, qb.source_type, qb.created_at, qb.updated_at, s.name
+              qb.id, qb.owner_user_id, qb.subject_id, qb.folder_id, qb.name, qb.description,
+              qb.visibility, qb.source_type, qb.created_at, qb.updated_at, s.name, qbf.name
             ORDER BY qb.updated_at DESC, qb.id DESC
             """,
-            (user["id"], user["id"], user["id"]),
+            (user["id"], user["id"], user["id"], user["id"]),
         )
         rows = cursor.fetchall()
 
@@ -213,6 +256,440 @@ def delete_question_bank_api(bank_id):
             return fail("只能删除自己创建的题库", 403)
 
     return success(None, "题库已删除")
+
+
+@question_bank_bp.get("/question-bank-folders")
+def list_question_bank_folders():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT qbf.id, qbf.name, qbf.sort_order, COUNT(qb.id) AS bank_count
+            FROM question_bank_folders qbf
+            LEFT JOIN question_banks qb
+              ON qb.folder_id=qbf.id AND qb.owner_user_id=qbf.user_id
+            WHERE qbf.user_id=%s
+            GROUP BY qbf.id, qbf.name, qbf.sort_order
+            ORDER BY qbf.sort_order, qbf.id
+            """,
+            (user["id"],),
+        )
+        folders = [
+            {
+                "id": int(row["id"]),
+                "name": row["name"],
+                "sortOrder": int(row.get("sort_order") or 0),
+                "bankCount": int(row.get("bank_count") or 0),
+            }
+            for row in cursor.fetchall()
+        ]
+    return success({"folders": folders})
+
+
+@question_bank_bp.post("/question-bank-folders")
+def create_question_bank_folder():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    name = str((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name or len(name) > 80:
+        return fail("文件夹名称不能为空且不能超过80个字符")
+    try:
+        with db_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO question_bank_folders(user_id,name) VALUES(%s,%s)",
+                (user["id"], name),
+            )
+            folder_id = cursor.lastrowid
+    except Exception as exc:
+        if "Duplicate" in str(exc):
+            return fail("已存在同名文件夹")
+        raise
+    return success({"id": folder_id, "name": name, "sortOrder": 0, "bankCount": 0}, "文件夹已创建", 201)
+
+
+@question_bank_bp.put("/question-bank-folders/<int:folder_id>")
+def rename_question_bank_folder(folder_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    name = str((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name or len(name) > 80:
+        return fail("文件夹名称不能为空且不能超过80个字符")
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "UPDATE question_bank_folders SET name=%s WHERE id=%s AND user_id=%s",
+            (name, folder_id, user["id"]),
+        )
+        if cursor.rowcount == 0:
+            return fail("文件夹不存在", 404)
+    return success(None, "文件夹名称已更新")
+
+
+@question_bank_bp.delete("/question-bank-folders/<int:folder_id>")
+def delete_question_bank_folder(folder_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "DELETE FROM question_bank_folders WHERE id=%s AND user_id=%s",
+            (folder_id, user["id"]),
+        )
+        if cursor.rowcount == 0:
+            return fail("文件夹不存在", 404)
+    return success(None, "文件夹已删除，题库已移回未分类")
+
+
+@question_bank_bp.put("/question-banks/batch/move")
+def batch_move_question_banks():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    body = request.get_json(silent=True) or {}
+    bank_ids = body.get("bank_ids") or []
+    folder_id = int(body.get("folder_id") or 0)
+    if not isinstance(bank_ids, list) or not bank_ids:
+        return fail("请选择要移动的题库")
+    normalized_ids = sorted({int(item) for item in bank_ids if int(item) > 0})
+    with db_cursor(commit=True) as cursor:
+        if folder_id > 0:
+            cursor.execute(
+                "SELECT id FROM question_bank_folders WHERE id=%s AND user_id=%s",
+                (folder_id, user["id"]),
+            )
+            if not cursor.fetchone():
+                return fail("目标文件夹不存在", 404)
+        placeholders = ",".join(["%s"] * len(normalized_ids))
+        cursor.execute(
+            f"""
+            UPDATE question_banks
+            SET folder_id=%s
+            WHERE owner_user_id=%s AND id IN ({placeholders})
+            """,
+            [folder_id or None, user["id"], *normalized_ids],
+        )
+        moved_count = cursor.rowcount
+    return success({"movedCount": moved_count}, f"已移动 {moved_count} 个题库")
+
+
+@question_bank_bp.post("/question-banks/<int:bank_id>/share")
+def create_question_bank_share(bank_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT id FROM question_banks WHERE id=%s AND owner_user_id=%s",
+            (bank_id, user["id"]),
+        )
+        if not cursor.fetchone():
+            return fail("只能分享自己创建的题库", 403)
+        cursor.execute(
+            """
+            SELECT share_code FROM question_bank_shares
+            WHERE question_bank_id=%s AND owner_user_id=%s AND status='active'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (bank_id, user["id"]),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            share_code = existing["share_code"]
+        else:
+            share_code = secrets.token_hex(4).upper()
+            cursor.execute(
+                """
+                INSERT INTO question_bank_shares(question_bank_id,owner_user_id,share_code)
+                VALUES(%s,%s,%s)
+                """,
+                (bank_id, user["id"], share_code),
+            )
+    return success({"shareCode": share_code}, "分享码已生成")
+
+
+@question_bank_bp.post("/question-bank-shares/claim")
+def claim_question_bank_share():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    share_code = str((request.get_json(silent=True) or {}).get("share_code") or "").strip().upper()
+    if not share_code:
+        return fail("请输入分享码")
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            """
+            SELECT qbs.id, qbs.owner_user_id, qb.name
+            FROM question_bank_shares qbs
+            JOIN question_banks qb ON qb.id=qbs.question_bank_id
+            WHERE qbs.share_code=%s AND qbs.status='active'
+              AND (qbs.expires_at IS NULL OR qbs.expires_at>NOW())
+            LIMIT 1
+            """,
+            (share_code,),
+        )
+        share = cursor.fetchone()
+        if not share:
+            return fail("分享码不存在或已失效", 404)
+        if int(share["owner_user_id"]) == int(user["id"]):
+            return fail("这是你自己的题库")
+        cursor.execute(
+            "INSERT IGNORE INTO question_bank_share_members(share_id,user_id) VALUES(%s,%s)",
+            (share["id"], user["id"]),
+        )
+    return success({"bankName": share["name"]}, "共享题库已加入")
+
+
+@question_bank_bp.get("/question-banks/<int:bank_id>/export")
+def export_question_bank(bank_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor() as cursor:
+        cursor.execute(
+            "SELECT id,name FROM question_banks WHERE id=%s AND owner_user_id=%s",
+            (bank_id, user["id"]),
+        )
+        bank = cursor.fetchone()
+        if not bank:
+            return fail("只能导出自己创建的题库", 403)
+        cursor.execute(
+            """
+            SELECT q.id,q.type,q.stem,q.score,q.analysis,q.knowledge_point
+            FROM questions q
+            WHERE q.question_bank_id=%s AND q.status='active'
+            ORDER BY q.id
+            """,
+            (bank_id,),
+        )
+        questions = cursor.fetchall()
+        question_ids = [row["id"] for row in questions]
+        options_map = {}
+        answers_map = {}
+        if question_ids:
+            placeholders = ",".join(["%s"] * len(question_ids))
+            cursor.execute(
+                f"""
+                SELECT question_id,option_key,content
+                FROM question_options
+                WHERE question_id IN ({placeholders})
+                ORDER BY question_id,sort_order,option_key
+                """,
+                question_ids,
+            )
+            for row in cursor.fetchall():
+                options_map.setdefault(row["question_id"], []).append(row)
+            cursor.execute(
+                f"""
+                SELECT question_id,GROUP_CONCAT(answer_text ORDER BY is_primary DESC,id SEPARATOR '；') AS answer_text
+                FROM question_answers
+                WHERE question_id IN ({placeholders})
+                GROUP BY question_id
+                """,
+                question_ids,
+            )
+            answers_map = {row["question_id"]: row.get("answer_text") or "" for row in cursor.fetchall()}
+
+    export_format = str(request.args.get("format") or "xlsx").strip().lower()
+    if export_format not in ("xlsx", "pdf"):
+        return fail("导出格式只能是 xlsx 或 pdf")
+
+    filename = safe_export_filename(bank["name"]) or f"question-bank-{bank_id}"
+    if export_format == "pdf":
+        output = build_question_bank_pdf(bank, questions, options_map, answers_map)
+        save_export_copy(output, filename, "pdf")
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=f"{filename}.pdf",
+            mimetype="application/pdf",
+        )
+
+    workbook = Workbook()
+    paper = workbook.active
+    paper.title = "试题卷"
+    answers = workbook.create_sheet("答案解析")
+    header_fill = PatternFill("solid", fgColor="DCEBFF")
+    for sheet in (paper, answers):
+        sheet.merge_cells("A1:F1")
+        sheet["A1"] = bank["name"]
+        sheet["A1"].font = Font(size=16, bold=True)
+        sheet["A1"].alignment = Alignment(horizontal="center")
+        sheet.column_dimensions["A"].width = 8
+        sheet.column_dimensions["B"].width = 14
+        sheet.column_dimensions["C"].width = 65
+        sheet.column_dimensions["D"].width = 12
+        sheet.column_dimensions["E"].width = 24
+        sheet.column_dimensions["F"].width = 50
+    paper.append(["序号", "题型", "题目", "分值", "知识点", "选项"])
+    answers.append(["序号", "题型", "题目", "答案", "知识点", "解析"])
+    for sheet in (paper, answers):
+        for cell in sheet[2]:
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+    for index, question in enumerate(questions, start=1):
+        option_text = "\n".join(
+            f"{item['option_key']}. {item['content']}"
+            for item in options_map.get(question["id"], [])
+        )
+        paper.append([
+            index,
+            QUESTION_TYPE_LABELS.get(question["type"], question["type"]),
+            question["stem"],
+            float(question.get("score") or 0),
+            question.get("knowledge_point") or "",
+            option_text,
+        ])
+        answers.append([
+            index,
+            QUESTION_TYPE_LABELS.get(question["type"], question["type"]),
+            question["stem"],
+            answers_map.get(question["id"], ""),
+            question.get("knowledge_point") or "",
+            question.get("analysis") or "",
+        ])
+    for sheet in (paper, answers):
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    save_export_copy(output, filename, "xlsx")
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f"{filename}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def safe_export_filename(value):
+    filename = re.sub(r'[\\/:*?"<>|]+', "_", str(value or "")).strip(" .")
+    return filename[:100]
+
+
+def save_export_copy(output, filename, extension):
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    export_path = EXPORT_DIR / f"{filename}-{timestamp}.{extension}"
+    export_path.write_bytes(output.getvalue())
+    output.seek(0)
+    return export_path
+
+
+def escape_pdf_text(value):
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
+
+
+def build_question_bank_pdf(bank, questions, options_map, answers_map):
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    output = io.BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title=bank["name"],
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ChineseTitle",
+        parent=styles["Title"],
+        fontName="STSong-Light",
+        fontSize=18,
+        leading=24,
+        alignment=TA_CENTER,
+        spaceAfter=12,
+    )
+    body_style = ParagraphStyle(
+        "ChineseBody",
+        parent=styles["BodyText"],
+        fontName="STSong-Light",
+        fontSize=10.5,
+        leading=17,
+        spaceAfter=5,
+    )
+    meta_style = ParagraphStyle(
+        "ChineseMeta",
+        parent=body_style,
+        textColor=colors.HexColor("#667085"),
+        fontSize=9,
+        leading=14,
+    )
+    answer_style = ParagraphStyle(
+        "ChineseAnswer",
+        parent=body_style,
+        textColor=colors.HexColor("#175CD3"),
+    )
+
+    story = [
+        Paragraph(escape_pdf_text(bank["name"]), title_style),
+        Paragraph(f"题目数量：{len(questions)}", meta_style),
+        Spacer(1, 5 * mm),
+    ]
+    for index, question in enumerate(questions, start=1):
+        type_label = QUESTION_TYPE_LABELS.get(question["type"], question["type"])
+        story.append(
+            Paragraph(
+                f"{index}. [{escape_pdf_text(type_label)}] {escape_pdf_text(question['stem'])}"
+                f"（{float(question.get('score') or 0):g}分）",
+                body_style,
+            )
+        )
+        option_rows = options_map.get(question["id"], [])
+        if option_rows:
+            option_data = [
+                [
+                    Paragraph(escape_pdf_text(item["option_key"]), body_style),
+                    Paragraph(escape_pdf_text(item["content"]), body_style),
+                ]
+                for item in option_rows
+            ]
+            option_table = Table(option_data, colWidths=[12 * mm, 145 * mm])
+            option_table.setStyle(
+                TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ])
+            )
+            story.append(option_table)
+        if question.get("knowledge_point"):
+            story.append(
+                Paragraph(f"知识点：{escape_pdf_text(question['knowledge_point'])}", meta_style)
+            )
+        story.append(Spacer(1, 4 * mm))
+
+    story.append(PageBreak())
+    story.append(Paragraph("答案与解析", title_style))
+    for index, question in enumerate(questions, start=1):
+        story.append(
+            Paragraph(
+                f"{index}. 答案：{escape_pdf_text(answers_map.get(question['id'], ''))}",
+                answer_style,
+            )
+        )
+        analysis = question.get("analysis") or "暂无解析"
+        story.append(Paragraph(f"解析：{escape_pdf_text(analysis)}", body_style))
+        story.append(Spacer(1, 3 * mm))
+
+    document.build(story)
+    output.seek(0)
+    return output
+
 
 @question_bank_bp.get("/question-banks/<int:bank_id>")
 def question_bank_detail_api(bank_id):
@@ -680,6 +1157,245 @@ def question_list_api(bank_id):
             "pageCount": page_count,
         },
     }, "题目列表获取成功")
+
+
+def _owned_bank(cursor, bank_id, user_id):
+    cursor.execute(
+        "SELECT id,name,subject_id FROM question_banks WHERE id=%s AND owner_user_id=%s LIMIT 1",
+        (bank_id, user_id),
+    )
+    return cursor.fetchone()
+
+
+def _question_payload(body):
+    question_type = str(body.get("type") or "").strip()
+    if question_type not in QUESTION_TYPE_LABELS:
+        raise ValueError("题型不正确")
+    stem = str(body.get("stem") or "").strip()
+    if not stem:
+        raise ValueError("题干不能为空")
+    difficulty = max(1, min(5, int(body.get("difficulty") or 3)))
+    score = float(body.get("score") or 1)
+    if score <= 0:
+        raise ValueError("分值必须大于 0")
+    status = str(body.get("status") or "active").strip()
+    if status not in {"draft", "active"}:
+        raise ValueError("题目状态不正确")
+    options = body.get("options") or []
+    if not isinstance(options, list):
+        raise ValueError("选项格式不正确")
+    answer_text = str(body.get("answer_text") or "").strip()
+    if not answer_text:
+        raise ValueError("答案不能为空")
+    return {
+        "type": question_type,
+        "stem": stem,
+        "analysis": str(body.get("analysis") or "").strip(),
+        "difficulty": difficulty,
+        "score": score,
+        "knowledge_point": str(body.get("knowledge_point") or "").strip(),
+        "status": status,
+        "options": options,
+        "answer_text": answer_text,
+    }
+
+
+def _replace_question_children(cursor, question_id, payload):
+    cursor.execute("DELETE FROM question_options WHERE question_id=%s", (question_id,))
+    for index, option in enumerate(payload["options"], start=1):
+        if not isinstance(option, dict):
+            continue
+        option_key = str(option.get("option_key") or option.get("optionKey") or "").strip().upper()
+        content = str(option.get("content") or "").strip()
+        if option_key and content:
+            cursor.execute(
+                """
+                INSERT INTO question_options(question_id,option_key,content,is_correct,sort_order)
+                VALUES(%s,%s,%s,%s,%s)
+                """,
+                (
+                    question_id,
+                    option_key,
+                    content,
+                    1 if option_key in [item.strip().upper() for item in payload["answer_text"].split(",")] else 0,
+                    index,
+                ),
+            )
+    cursor.execute("DELETE FROM question_answers WHERE question_id=%s", (question_id,))
+    cursor.execute(
+        "INSERT INTO question_answers(question_id,answer_text,is_primary) VALUES(%s,%s,1)",
+        (question_id, payload["answer_text"]),
+    )
+
+
+@question_bank_bp.get("/question-banks/<int:bank_id>/editor-questions")
+def editor_question_list(bank_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor() as cursor:
+        bank = _owned_bank(cursor, bank_id, user["id"])
+        if not bank:
+            return fail("只能编辑自己创建的题库", 403)
+        cursor.execute(
+            """
+            SELECT id,type,stem,analysis,difficulty,score,knowledge_point,ai_generated,status,created_at
+            FROM questions
+            WHERE question_bank_id=%s AND status IN ('draft','active')
+            ORDER BY status='draft' DESC,id DESC
+            """,
+            (bank_id,),
+        )
+        rows = cursor.fetchall()
+        ids = [row["id"] for row in rows]
+        options_map, answers_map = {}, {}
+        if ids:
+            placeholders = build_in_placeholders(ids)
+            cursor.execute(
+                f"SELECT question_id,option_key,content,is_correct FROM question_options WHERE question_id IN ({placeholders}) ORDER BY question_id,sort_order,id",
+                ids,
+            )
+            for row in cursor.fetchall():
+                options_map.setdefault(row["question_id"], []).append({
+                    "optionKey": row["option_key"],
+                    "content": row["content"],
+                    "isCorrect": int(row.get("is_correct") or 0),
+                })
+            cursor.execute(
+                f"SELECT question_id,GROUP_CONCAT(answer_text ORDER BY is_primary DESC,id SEPARATOR ',') answer_text FROM question_answers WHERE question_id IN ({placeholders}) GROUP BY question_id",
+                ids,
+            )
+            answers_map = {row["question_id"]: row.get("answer_text") or "" for row in cursor.fetchall()}
+    questions = [{
+        "id": int(row["id"]),
+        "type": row["type"],
+        "typeLabel": QUESTION_TYPE_LABELS.get(row["type"], row["type"]),
+        "stem": row["stem"] or "",
+        "analysis": row.get("analysis") or "",
+        "difficulty": int(row.get("difficulty") or 3),
+        "score": float(row.get("score") or 1),
+        "knowledgePoint": row.get("knowledge_point") or "",
+        "answerText": answers_map.get(row["id"], ""),
+        "aiGenerated": int(row.get("ai_generated") or 0),
+        "status": row.get("status") or "draft",
+        "options": options_map.get(row["id"], []),
+    } for row in rows]
+    return success({"bankId": bank_id, "bankName": bank["name"], "questions": questions})
+
+
+@question_bank_bp.post("/question-banks/<int:bank_id>/questions")
+def create_question_api(bank_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    try:
+        payload = _question_payload(request.get_json(silent=True) or {})
+    except (ValueError, TypeError) as exc:
+        return fail(str(exc))
+    with db_cursor(commit=True) as cursor:
+        bank = _owned_bank(cursor, bank_id, user["id"])
+        if not bank:
+            return fail("只能编辑自己创建的题库", 403)
+        cursor.execute(
+            """
+            INSERT INTO questions(question_bank_id,subject_id,type,stem,analysis,difficulty,score,knowledge_point,ai_generated,status)
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,0,%s)
+            """,
+            (bank_id, bank.get("subject_id"), payload["type"], payload["stem"], payload["analysis"],
+             payload["difficulty"], payload["score"], payload["knowledge_point"], payload["status"]),
+        )
+        question_id = cursor.lastrowid
+        _replace_question_children(cursor, question_id, payload)
+    return success({"questionId": question_id}, "题目已创建", 201)
+
+
+@question_bank_bp.put("/questions/<int:question_id>")
+def update_question_api(question_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    try:
+        payload = _question_payload(request.get_json(silent=True) or {})
+    except (ValueError, TypeError) as exc:
+        return fail(str(exc))
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            """
+            SELECT q.id FROM questions q JOIN question_banks qb ON qb.id=q.question_bank_id
+            WHERE q.id=%s AND qb.owner_user_id=%s
+            """,
+            (question_id, user["id"]),
+        )
+        if not cursor.fetchone():
+            return fail("题目不存在或无权编辑", 404)
+        cursor.execute(
+            """
+            UPDATE questions SET type=%s,stem=%s,analysis=%s,difficulty=%s,score=%s,
+              knowledge_point=%s,status=%s WHERE id=%s
+            """,
+            (payload["type"], payload["stem"], payload["analysis"], payload["difficulty"],
+             payload["score"], payload["knowledge_point"], payload["status"], question_id),
+        )
+        _replace_question_children(cursor, question_id, payload)
+    return success(None, "题目已更新")
+
+
+@question_bank_bp.delete("/questions/<int:question_id>")
+def delete_question_api(question_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    with db_cursor(commit=True) as cursor:
+        cursor.execute(
+            """
+            DELETE q FROM questions q JOIN question_banks qb ON qb.id=q.question_bank_id
+            WHERE q.id=%s AND qb.owner_user_id=%s
+            """,
+            (question_id, user["id"]),
+        )
+        if cursor.rowcount == 0:
+            return fail("题目不存在或无权删除", 404)
+    return success(None, "题目已删除")
+
+
+@question_bank_bp.put("/question-banks/<int:bank_id>/questions/batch")
+def batch_update_questions(bank_id):
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+    body = request.get_json(silent=True) or {}
+    ids = body.get("question_ids") or []
+    if not isinstance(ids, list) or not ids:
+        return fail("请选择题目")
+    question_ids = sorted({int(item) for item in ids if int(item) > 0})
+    action = str(body.get("action") or "").strip()
+    with db_cursor(commit=True) as cursor:
+        if not _owned_bank(cursor, bank_id, user["id"]):
+            return fail("只能编辑自己创建的题库", 403)
+        placeholders = build_in_placeholders(question_ids)
+        params = [bank_id, *question_ids]
+        if action == "publish":
+            cursor.execute(
+                f"UPDATE questions SET status='active' WHERE question_bank_id=%s AND id IN ({placeholders})",
+                params,
+            )
+        elif action == "score":
+            score = float(body.get("score") or 0)
+            if score <= 0:
+                return fail("分值必须大于 0")
+            cursor.execute(
+                f"UPDATE questions SET score=%s WHERE question_bank_id=%s AND id IN ({placeholders})",
+                [score, *params],
+            )
+        elif action == "delete":
+            cursor.execute(
+                f"DELETE FROM questions WHERE question_bank_id=%s AND id IN ({placeholders})",
+                params,
+            )
+        else:
+            return fail("不支持的批量操作")
+        affected = cursor.rowcount
+    return success({"affectedCount": affected}, f"已处理 {affected} 道题")
 
 ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xls"}
 

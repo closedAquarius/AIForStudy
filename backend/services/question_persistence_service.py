@@ -12,6 +12,7 @@ class QuestionPersistenceService:
         generated: dict[str, Any],
         owner_user_id: int | None = None,
         question_bank_id: int | None = None,
+        status: str = "draft",
     ) -> dict[str, Any]:
         question_bank = generated.get("question_bank") or {}
         questions = generated.get("questions") or []
@@ -42,6 +43,7 @@ class QuestionPersistenceService:
                         question_bank_id=question_bank_id,
                         subject_id=subject_id,
                         question=question,
+                        status=status,
                     )
                 )
 
@@ -50,6 +52,7 @@ class QuestionPersistenceService:
             "subject_id": subject_id,
             "saved_count": len(saved_question_ids),
             "question_ids": saved_question_ids,
+            "status": status,
         }
 
     def _resolve_owner_id(self, cursor, owner_user_id: int | None) -> int | None:
@@ -94,7 +97,8 @@ class QuestionPersistenceService:
         if not cursor.fetchone():
             raise ValueError(f"题库不存在: {question_bank_id}")
 
-    def _save_question(self, cursor, question_bank_id: int, subject_id: int, question: dict[str, Any]) -> int:
+    def _save_question(self, cursor, question_bank_id: int, subject_id: int, question: dict[str, Any], status: str) -> int:
+        normalized_status = status if status in {"draft", "active"} else "draft"
         extra = question.get("extra") or {}
         cursor.execute(
             """
@@ -102,7 +106,7 @@ class QuestionPersistenceService:
               (question_bank_id, subject_id, type, stem, analysis, difficulty, score,
                knowledge_point, ai_generated, status, extra)
             VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, 1, 'active', %s)
+              (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
             """,
             (
                 question_bank_id,
@@ -113,6 +117,7 @@ class QuestionPersistenceService:
                 int(question.get("difficulty") or 3),
                 float(question.get("score") or 1),
                 question.get("knowledge_point") or "",
+                normalized_status,
                 json.dumps(extra, ensure_ascii=False),
             ),
         )

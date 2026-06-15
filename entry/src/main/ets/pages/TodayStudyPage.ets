@@ -3,7 +3,9 @@ import {
   DailyReviewTaskItem,
   TodayReviewPlanData,
   getTodayReviewPlan,
-  startTodayReviewPlan
+  startTodayReviewPlan,
+  regenerateTodayReviewPlan,
+  updateTodayReviewTask
 } from '../common/ApiClient';
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
 
@@ -14,6 +16,8 @@ struct TodayStudyPage {
   @State starting: boolean = false;
   @State message: string = '';
   @State plan: TodayReviewPlanData | null = null;
+  @State updatingTaskId: number = 0;
+  @State regenerating: boolean = false;
 
   aboutToAppear(): void {
     this.loadPlan();
@@ -76,11 +80,100 @@ struct TodayStudyPage {
     if (!this.plan || this.plan.totalCount <= 0) {
       return 0;
     }
-    return Math.max(0, Math.min(100, this.plan.completedCount * 100 / this.plan.totalCount));
+    return Math.max(0, Math.min(100, this.plan.handledCount * 100 / this.plan.totalCount));
   }
 
   private sourceLabel(sourceType: string): string {
-    return sourceType === 'wrong_question' ? '到期错题' : '薄弱知识点';
+    if (sourceType === 'wrong_question') {
+      return '到期错题';
+    }
+    if (sourceType === 'favorite') {
+      return '我的收藏';
+    }
+    return '薄弱知识点';
+  }
+
+  private sourceColor(sourceType: string): string {
+    if (sourceType === 'wrong_question') {
+      return '#DC2626';
+    }
+    if (sourceType === 'favorite') {
+      return '#B45309';
+    }
+    return '#7C3AED';
+  }
+
+  private sourceBackground(sourceType: string): string {
+    if (sourceType === 'wrong_question') {
+      return '#FFF1F2';
+    }
+    if (sourceType === 'favorite') {
+      return '#FFF7E6';
+    }
+    return '#F3EEFF';
+  }
+
+  private statusLabel(item: DailyReviewTaskItem): string {
+    if (item.status === 'completed') {
+      return item.isCorrect === 1 ? '已掌握' : '需再复习';
+    }
+    if (item.status === 'skipped') {
+      return '今日已跳过';
+    }
+    if (item.status === 'postponed') {
+      return '已安排明天';
+    }
+    return '待完成';
+  }
+
+  private statusColor(item: DailyReviewTaskItem): string {
+    if (item.status === 'completed') {
+      return item.isCorrect === 1 ? '#16A66A' : '#EF4444';
+    }
+    if (item.status === 'pending') {
+      return '#F59E0B';
+    }
+    return '#64748B';
+  }
+
+  private async updateTask(item: DailyReviewTaskItem, action: string): Promise<void> {
+    if (this.updatingTaskId > 0 || !this.plan || this.plan.status === 'in_progress') {
+      return;
+    }
+    this.updatingTaskId = item.id;
+    this.message = '';
+    try {
+      const result = await updateTodayReviewTask(this.getToken(), item.id, action);
+      if (result.success && result.data) {
+        this.plan = result.data;
+      } else {
+        this.message = result.message || '任务调整失败';
+      }
+    } catch (error) {
+      this.message = `任务调整失败：${(error as Error).message}`;
+    } finally {
+      this.updatingTaskId = 0;
+    }
+  }
+
+  private async regeneratePlan(): Promise<void> {
+    if (this.regenerating || !this.plan || this.plan.status === 'in_progress') {
+      return;
+    }
+    this.regenerating = true;
+    this.message = '';
+    try {
+      const result = await regenerateTodayReviewPlan(this.getToken());
+      if (result.success && result.data) {
+        this.plan = result.data;
+      } else {
+        this.message = result.message || '重新生成任务失败';
+      }
+    } catch (error) {
+      this.message = `重新生成任务失败：${(error as Error).message}`;
+    } finally {
+      this.regenerating = false;
+    }
   }
 
   private typeLabel(type: string): string {
@@ -106,9 +199,9 @@ struct TodayStudyPage {
         Text(this.sourceLabel(item.sourceType))
           .fontSize(10)
           .fontWeight(FontWeight.Bold)
-          .fontColor(item.sourceType === 'wrong_question' ? '#DC2626' : '#7C3AED')
+          .fontColor(this.sourceColor(item.sourceType))
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .backgroundColor(item.sourceType === 'wrong_question' ? '#FFF1F2' : '#F3EEFF')
+          .backgroundColor(this.sourceBackground(item.sourceType))
           .borderRadius(6)
 
         Text(this.typeLabel(item.type))
@@ -117,9 +210,9 @@ struct TodayStudyPage {
 
         Blank()
 
-        Text(item.status === 'completed' ? (item.isCorrect === 1 ? '已掌握' : '需再复习') : '待完成')
+        Text(this.statusLabel(item))
           .fontSize(11)
-          .fontColor(item.status === 'completed' ? (item.isCorrect === 1 ? '#16A66A' : '#EF4444') : '#F59E0B')
+          .fontColor(this.statusColor(item))
       }
       .width('100%')
 
@@ -143,6 +236,49 @@ struct TodayStudyPage {
           .fontColor('#94A3B8')
       }
       .width('100%')
+
+      if (this.plan !== null && this.plan!.status !== 'in_progress' && item.status !== 'completed') {
+        Row({ space: 8 }) {
+          if (item.status === 'pending') {
+            Button('明天再做')
+              .layoutWeight(1)
+              .height(34)
+              .fontSize(12)
+              .fontColor('#2563EB')
+              .backgroundColor('#EEF5FF')
+              .borderRadius(6)
+              .enabled(this.updatingTaskId === 0)
+              .onClick(() => {
+                this.updateTask(item, 'postpone');
+              })
+
+            Button('跳过')
+              .layoutWeight(1)
+              .height(34)
+              .fontSize(12)
+              .fontColor('#64748B')
+              .backgroundColor('#F1F5F9')
+              .borderRadius(6)
+              .enabled(this.updatingTaskId === 0)
+              .onClick(() => {
+                this.updateTask(item, 'skip');
+              })
+          } else {
+            Button('恢复到今日任务')
+              .width('100%')
+              .height(34)
+              .fontSize(12)
+              .fontColor('#16A66A')
+              .backgroundColor('#ECFDF5')
+              .borderRadius(6)
+              .enabled(this.updatingTaskId === 0)
+              .onClick(() => {
+                this.updateTask(item, 'restore');
+              })
+          }
+        }
+        .width('100%')
+      }
     }
     .width('100%')
     .padding(13)
@@ -176,7 +312,7 @@ struct TodayStudyPage {
                     .fontWeight(FontWeight.Bold)
                     .fontColor('#0B1B44')
 
-                  Text(`${this.plan!.completedCount}/${this.plan!.totalCount} 题`)
+                  Text(`${this.plan!.handledCount}/${this.plan!.totalCount} 项已处理 · ${this.plan!.completedCount} 题完成`)
                     .fontSize(13)
                     .fontColor('#64748B')
                 }
@@ -217,6 +353,33 @@ struct TodayStudyPage {
                 .fontSize(12)
                 .lineHeight(19)
                 .fontColor('#475569')
+
+              Row({ space: 8 }) {
+                Text(`错题 ${this.plan!.sourceStats.wrongQuestion}`)
+                  .fontSize(11)
+                  .fontColor('#DC2626')
+                Text(`薄弱点 ${this.plan!.sourceStats.weakKnowledge}`)
+                  .fontSize(11)
+                  .fontColor('#7C3AED')
+                Text(`收藏 ${this.plan!.sourceStats.favorite}`)
+                  .fontSize(11)
+                  .fontColor('#B45309')
+              }
+              .width('100%')
+
+              if (this.plan!.status !== 'in_progress') {
+                Button(this.regenerating ? '生成中...' : '重新生成今日任务')
+                  .width('100%')
+                  .height(36)
+                  .fontSize(12)
+                  .fontColor('#16A66A')
+                  .backgroundColor('#FFFFFF')
+                  .borderRadius(6)
+                  .enabled(!this.regenerating)
+                  .onClick(() => {
+                    this.regeneratePlan();
+                  })
+              }
             }
             .width('100%')
             .padding(16)
@@ -277,7 +440,7 @@ struct TodayStudyPage {
 
               ForEach(this.plan!.tasks, (item: DailyReviewTaskItem) => {
                 this.TaskCard(item)
-              }, (item: DailyReviewTaskItem) => `${item.id}`)
+              }, (item: DailyReviewTaskItem) => `${item.id}-${item.status}`)
             }
 
             if (this.message.length > 0) {
@@ -294,7 +457,7 @@ struct TodayStudyPage {
         .layoutWeight(1)
         .width('100%')
 
-        if (this.plan!.totalCount > 0) {
+        if (this.plan!.pendingCount > 0) {
           Button(
             this.plan!.status === 'completed'
               ? '今日任务已完成'

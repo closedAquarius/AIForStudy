@@ -19,6 +19,7 @@ struct QuestionBankDetailPage {
   @State showStartDialog: boolean = false;
   @State selectedPracticeCount: number = 10;
   @State selectedPracticeMode: string = 'new_first';
+  @State selectedExamDuration: number = 30;
   @State startingPractice: boolean = false;
 
   aboutToAppear(): void {
@@ -48,6 +49,9 @@ struct QuestionBankDetailPage {
 
 
   private practiceModeLabel(): string {
+    if (this.selectedPracticeMode === 'mock_exam') {
+      return `模拟考试 · ${this.selectedExamDuration} 分钟`;
+    }
     return this.selectedPracticeMode === 'wrong_first' ? '错题优先' : '新题优先';
   }
 
@@ -68,7 +72,8 @@ struct QuestionBankDetailPage {
         this.getToken(),
         this.bankId,
         this.selectedPracticeCount,
-        this.selectedPracticeMode
+        this.selectedPracticeMode,
+        this.selectedExamDuration
       );
 
       if (result.success && result.data) {
@@ -153,7 +158,33 @@ struct QuestionBankDetailPage {
         .maxLines(1)
 
       Row({ space: 6 }) {
-        Button('查看题目')
+        Button('编辑')
+          .height(34)
+          .fontSize(12)
+          .borderRadius(8)
+          .backgroundColor('#FFF7E6')
+          .fontColor('#B45309')
+          .onClick(() => {
+            router.pushUrl({
+              url: 'pages/QuestionEditorPage',
+              params: { bankId: this.bankId.toString() }
+            });
+          })
+
+        Button('图谱')
+          .height(34)
+          .fontSize(12)
+          .borderRadius(8)
+          .backgroundColor('#ECFDF5')
+          .fontColor('#16805A')
+          .onClick(() => {
+            router.pushUrl({
+              url: 'pages/KnowledgeGraphPage',
+              params: { bankId: this.bankId.toString() }
+            });
+          })
+
+        Button('题目')
           .height(34)
           .fontSize(12)
           .borderRadius(15)
@@ -168,7 +199,7 @@ struct QuestionBankDetailPage {
             });
           })
 
-        Button('开始刷题')
+        Button('练习')
           .height(34)
           .fontSize(12)
           .borderRadius(15)
@@ -178,7 +209,7 @@ struct QuestionBankDetailPage {
             this.showStartDialog = true;
           })
       }
-      .width(150)
+      .width(210)
       .justifyContent(FlexAlign.End)
     }
     .width('100%')
@@ -457,11 +488,28 @@ struct QuestionBankDetailPage {
   }
 
   @Builder
+  DurationChip(minutes: number) {
+    Text(`${minutes} 分钟`)
+      .height(34)
+      .padding({ left: 13, right: 13 })
+      .fontSize(12)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.selectedExamDuration === minutes ? '#FFFFFF' : '#B45309')
+      .textAlign(TextAlign.Center)
+      .borderRadius(8)
+      .backgroundColor(this.selectedExamDuration === minutes ? '#F59E0B' : '#FFF7E6')
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.selectedExamDuration = minutes;
+      })
+  }
+
+  @Builder
   StartPracticeDialog() {
     Column({ space: 18 }) {
       Row() {
         Column({ space: 4 }) {
-          Text('开始刷题')
+          Text('开始练习')
             .fontSize(23)
             .fontWeight(FontWeight.Bold)
             .fontColor('#0B1B44')
@@ -516,8 +564,33 @@ struct QuestionBankDetailPage {
           this.ModeChip('wrong_first', '错题优先', '60% 错题，帮助集中复盘薄弱点')
         }
         .width('100%')
+
+        Row() {
+          this.ModeChip('mock_exam', '模拟考试', '随机抽题、限时作答，交卷后生成成绩与知识点报告')
+        }
+        .width('100%')
       }
       .width('100%')
+
+      if (this.selectedPracticeMode === 'mock_exam') {
+        Column({ space: 10 }) {
+          Text('考试时长')
+            .width('100%')
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#0B1B44')
+
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.DurationChip(10)
+            this.DurationChip(20)
+            this.DurationChip(30)
+            this.DurationChip(45)
+            this.DurationChip(60)
+          }
+          .width('100%')
+        }
+        .width('100%')
+      }
 
       Text(`当前方案：${this.selectedPracticeCount} 题 · ${this.practiceModeLabel()}`)
         .width('100%')
@@ -527,7 +600,8 @@ struct QuestionBankDetailPage {
         .borderRadius(14)
         .backgroundColor('#EAF3FF')
 
-      Button(this.startingPractice ? '进入中...' : '进入刷题')
+      Button(this.startingPractice ? '进入中...' :
+        (this.selectedPracticeMode === 'mock_exam' ? '开始模拟考试' : '进入刷题'))
         .width('100%')
         .height(48)
         .borderRadius(18)

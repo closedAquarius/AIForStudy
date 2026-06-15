@@ -140,7 +140,7 @@ function createHttpHeader(contentType: string): HttpHeader {
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
+const API_BASE_URL: string = 'http://192.168.144.1:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
@@ -361,6 +361,8 @@ export interface QuestionBankSummary {
   name: string;
   description: string;
   subjectName: string;
+  folderId: number;
+  folderName: string;
   visibility: string;
   sourceType: string;
   totalCount: number;
@@ -373,6 +375,29 @@ export interface QuestionBankSummary {
 
 export interface QuestionBankListData {
   banks: QuestionBankSummary[];
+}
+
+export interface QuestionBankFolder {
+  id: number;
+  name: string;
+  sortOrder: number;
+  bankCount: number;
+}
+
+export interface QuestionBankFolderListData {
+  folders: QuestionBankFolder[];
+}
+
+export interface QuestionBankShareData {
+  shareCode: string;
+}
+
+export interface QuestionBankClaimData {
+  bankName: string;
+}
+
+export interface QuestionBankMoveData {
+  movedCount: number;
 }
 
 export interface QuestionBankResponse {
@@ -394,6 +419,31 @@ export interface StudyDiarySaveData {
 
 export interface DiaryPolishData {
   result: string;
+}
+
+export interface DiaryInsightWeakPoint {
+  name: string;
+  answerCount: number;
+  accuracyRate: number;
+}
+
+export interface DiaryInsightData {
+  hasData: boolean;
+  moodLabel: string;
+  moodTrend: string;
+  learningStatus: string;
+  summary: string;
+  goals: string[];
+  suggestions: string[];
+  weakPoints: DiaryInsightWeakPoint[];
+  riskLevel: string;
+  isAiGenerated: boolean;
+  diaryCount: number;
+  averageMood: number;
+  answerCount: number;
+  accuracyRate: number;
+  studyMinutes: number;
+  generatedAt: string;
 }
 
 export interface QuestionBankStats {
@@ -478,6 +528,44 @@ export interface QuestionListData {
   questions: QuestionListItem[];
   filters: QuestionListFilters;
   pagination: QuestionListPagination;
+}
+
+export interface QuestionEditorItem {
+  id: number;
+  type: string;
+  typeLabel: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledgePoint: string;
+  answerText: string;
+  aiGenerated: number;
+  status: string;
+  options: QuestionOptionItem[];
+}
+
+export interface QuestionEditorListData {
+  bankId: number;
+  bankName: string;
+  questions: QuestionEditorItem[];
+}
+
+export interface QuestionEditOption {
+  option_key: string;
+  content: string;
+}
+
+export interface QuestionEditRequest {
+  type: string;
+  stem: string;
+  analysis: string;
+  difficulty: number;
+  score: number;
+  knowledge_point: string;
+  answer_text: string;
+  status: string;
+  options: QuestionEditOption[];
 }
 
 export interface QuestionListQuery {
@@ -606,6 +694,49 @@ export interface ProfileOverviewData {
   aiConversationCount: number;
   recentActivity: ProfileActivityItem[];
   evaluation: string;
+}
+
+export interface KnowledgeGraphBankItem {
+  id: number;
+  name: string;
+}
+
+export interface KnowledgeGraphNode {
+  id: number;
+  bankId: number;
+  bankName: string;
+  type: string;
+  name: string;
+  description: string;
+  questionCount: number;
+  answerCount: number;
+  correctCount: number;
+  accuracyRate: number;
+  level: string;
+}
+
+export interface KnowledgeGraphRelation {
+  id: number;
+  bankId: number;
+  sourceId: number;
+  targetId: number;
+  type: string;
+  weight: number;
+}
+
+export interface KnowledgeGraphSummary {
+  totalCount: number;
+  masteredCount: number;
+  learningCount: number;
+  weakCount: number;
+  unlearnedCount: number;
+}
+
+export interface KnowledgeGraphData {
+  banks: KnowledgeGraphBankItem[];
+  nodes: KnowledgeGraphNode[];
+  relations: KnowledgeGraphRelation[];
+  summary: KnowledgeGraphSummary;
 }
 
 export interface ProfileUpdateData {
@@ -1124,6 +1255,16 @@ export function getStudyDiaryList(
   );
 }
 
+export function getDiaryInsight(
+  token: string
+): Promise<CommonResult<DiaryInsightData>> {
+  return requestJson<DiaryInsightData>(
+    http.RequestMethod.GET,
+    '/diary/insight',
+    token
+  );
+}
+
 export function updateStudyDiary(
   token: string,
   diaryId: number,
@@ -1419,6 +1560,7 @@ export interface PracticeStartData {
   mode: string;
   requestedCount: number;
   actualCount: number;
+  durationMinutes: number;
   questions: PracticeQuestionItem[];
 }
 
@@ -1427,6 +1569,8 @@ export interface PracticeSessionData {
   bankId: number;
   bankName: string;
   mode: string;
+  durationMinutes: number;
+  autoSubmit: boolean;
   totalCount: number;
   startedAt: string;
   finishedAt: string;
@@ -1441,10 +1585,25 @@ export interface PracticeAnswerSubmitItem {
 
 export interface PracticeAnswerResultItem {
   questionId: number;
+  seq?: number;
+  typeLabel?: string;
+  stem?: string;
   userAnswer: string;
   isCorrect: number;
   correctAnswer: string;
   analysis: string;
+  score: number;
+  earnedScore: number;
+  knowledgePoint: string;
+}
+
+export interface PracticeKnowledgeAnalysisItem {
+  knowledgePoint: string;
+  totalCount: number;
+  correctCount: number;
+  accuracyRate: number;
+  earnedScore: number;
+  totalScore: number;
 }
 
 export interface PracticeSubmitData {
@@ -1453,6 +1612,11 @@ export interface PracticeSubmitData {
   correctCount: number;
   wrongCount: number;
   accuracyRate: number;
+  earnedScore: number;
+  totalScore: number;
+  scoreRate: number;
+  durationSeconds: number;
+  knowledgeAnalysis: PracticeKnowledgeAnalysisItem[];
   answers: PracticeAnswerResultItem[];
 }
 
@@ -1460,6 +1624,7 @@ interface PracticeStartRequest {
   bank_id: number;
   count: number;
   mode: string;
+  duration_minutes: number;
 }
 
 interface PracticeSubmitRequest {
@@ -1475,12 +1640,14 @@ export function startPracticeSession(
   token: string,
   bankId: number,
   count: number,
-  mode: string
+  mode: string,
+  durationMinutes: number = 30
 ): Promise<CommonResult<PracticeStartData>> {
   const body: PracticeStartRequest = {
     bank_id: bankId,
     count: count,
-    mode: mode
+    mode: mode,
+    duration_minutes: durationMinutes
   };
 
   return requestJson<PracticeStartData>(
@@ -1764,11 +1931,242 @@ export interface DailyReviewTaskItem {
   sourceType: string;
   knowledgePoint: string;
   status: string;
+  postponedTo: string;
   isCorrect?: number | null;
   type: string;
   stem: string;
   difficulty: number;
   bankName: string;
+}
+
+export interface PracticeReportData extends PracticeSubmitData {
+  bankName: string;
+  mode: string;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export function getPracticeReport(
+  token: string,
+  sessionId: number
+): Promise<CommonResult<PracticeReportData>> {
+  return requestJson<PracticeReportData>(
+    http.RequestMethod.GET,
+    `/practice-sessions/${sessionId}/report`,
+    token
+  );
+}
+
+export function getKnowledgeGraph(
+  token: string,
+  bankId: number = 0
+): Promise<CommonResult<KnowledgeGraphData>> {
+  const path = bankId > 0 ? `/knowledge-graph?bankId=${bankId}` : '/knowledge-graph';
+  return requestJson<KnowledgeGraphData>(
+    http.RequestMethod.GET,
+    path,
+    token
+  );
+}
+
+export function getQuestionEditorList(
+  token: string,
+  bankId: number
+): Promise<CommonResult<QuestionEditorListData>> {
+  return requestJson<QuestionEditorListData>(
+    http.RequestMethod.GET,
+    `/question-banks/${bankId}/editor-questions`,
+    token
+  );
+}
+
+export function createQuestion(
+  token: string,
+  bankId: number,
+  data: QuestionEditRequest
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.POST,
+    `/question-banks/${bankId}/questions`,
+    token,
+    JSON.stringify(data)
+  );
+}
+
+export function updateQuestion(
+  token: string,
+  questionId: number,
+  data: QuestionEditRequest
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.PUT,
+    `/questions/${questionId}`,
+    token,
+    JSON.stringify(data)
+  );
+}
+
+export function deleteQuestion(
+  token: string,
+  questionId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/questions/${questionId}`,
+    token
+  );
+}
+
+interface QuestionBatchRequest {
+  question_ids: number[];
+  action: string;
+  score?: number;
+}
+
+export function batchUpdateQuestions(
+  token: string,
+  bankId: number,
+  questionIds: number[],
+  action: string,
+  score: number = 0
+): Promise<CommonResult<EmptyResponseData>> {
+  const body: QuestionBatchRequest = {
+    question_ids: questionIds,
+    action: action
+  };
+  if (score > 0) {
+    body.score = score;
+  }
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.PUT,
+    `/question-banks/${bankId}/questions/batch`,
+    token,
+    JSON.stringify(body)
+  );
+}
+
+export function getQuestionBankFolders(token: string): Promise<CommonResult<QuestionBankFolderListData>> {
+  return requestJson<QuestionBankFolderListData>(
+    http.RequestMethod.GET,
+    '/question-bank-folders',
+    token
+  );
+}
+
+export function createQuestionBankFolder(
+  token: string,
+  name: string
+): Promise<CommonResult<QuestionBankFolder>> {
+  return requestJson<QuestionBankFolder>(
+    http.RequestMethod.POST,
+    '/question-bank-folders',
+    token,
+    JSON.stringify({ name: name })
+  );
+}
+
+export function renameQuestionBankFolder(
+  token: string,
+  folderId: number,
+  name: string
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.PUT,
+    `/question-bank-folders/${folderId}`,
+    token,
+    JSON.stringify({ name: name })
+  );
+}
+
+export function deleteQuestionBankFolder(
+  token: string,
+  folderId: number
+): Promise<CommonResult<EmptyResponseData>> {
+  return requestJson<EmptyResponseData>(
+    http.RequestMethod.DELETE,
+    `/question-bank-folders/${folderId}`,
+    token
+  );
+}
+
+export function moveQuestionBanks(
+  token: string,
+  bankIds: number[],
+  folderId: number
+): Promise<CommonResult<QuestionBankMoveData>> {
+  return requestJson<QuestionBankMoveData>(
+    http.RequestMethod.PUT,
+    '/question-banks/batch/move',
+    token,
+    JSON.stringify({ bank_ids: bankIds, folder_id: folderId })
+  );
+}
+
+export function createQuestionBankShare(
+  token: string,
+  bankId: number
+): Promise<CommonResult<QuestionBankShareData>> {
+  return requestJson<QuestionBankShareData>(
+    http.RequestMethod.POST,
+    `/question-banks/${bankId}/share`,
+    token,
+    '{}'
+  );
+}
+
+export function claimQuestionBankShare(
+  token: string,
+  shareCode: string
+): Promise<CommonResult<QuestionBankClaimData>> {
+  return requestJson<QuestionBankClaimData>(
+    http.RequestMethod.POST,
+    '/question-bank-shares/claim',
+    token,
+    JSON.stringify({ share_code: shareCode })
+  );
+}
+
+export function exportQuestionBank(
+  token: string,
+  bankId: number,
+  format: string
+): Promise<ArrayBuffer> {
+  return new Promise((resolve: (value: ArrayBuffer) => void, reject: (reason: Error) => void) => {
+    const request = http.createHttp();
+    const header: RequestHeader = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    };
+    request.request(
+      `${API_BASE_URL}/question-banks/${bankId}/export?format=${encodeURIComponent(format)}`,
+      {
+        method: http.RequestMethod.GET,
+        header: header,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 15000,
+        readTimeout: 120000
+      },
+      (error, response) => {
+        request.destroy();
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        const statusCode = response.responseCode as number;
+        if (statusCode < 200 || statusCode >= 300) {
+          reject(new Error(`导出失败，状态码 ${statusCode}`));
+          return;
+        }
+        resolve(response.result as ArrayBuffer);
+      }
+    );
+  });
+}
+
+export interface DailyReviewSourceStats {
+  wrongQuestion: number;
+  weakKnowledge: number;
+  favorite: number;
 }
 
 export interface TodayReviewPlanData {
@@ -1777,6 +2175,11 @@ export interface TodayReviewPlanData {
   targetCount: number;
   completedCount: number;
   totalCount: number;
+  handledCount: number;
+  pendingCount: number;
+  skippedCount: number;
+  postponedCount: number;
+  sourceStats: DailyReviewSourceStats;
   moodAdjustment: number;
   moodSummary: string;
   generationReason: string;
@@ -1812,6 +2215,34 @@ export function startTodayReviewPlan(
     '/review/today/start',
     token,
     '{}',
+    15000,
+    30000
+  );
+}
+
+export function regenerateTodayReviewPlan(
+  token: string
+): Promise<CommonResult<TodayReviewPlanData>> {
+  return requestJson<TodayReviewPlanData>(
+    http.RequestMethod.POST,
+    '/review/today/regenerate',
+    token,
+    '{}',
+    15000,
+    30000
+  );
+}
+
+export function updateTodayReviewTask(
+  token: string,
+  taskId: number,
+  action: string
+): Promise<CommonResult<TodayReviewPlanData>> {
+  return requestJson<TodayReviewPlanData>(
+    http.RequestMethod.PUT,
+    `/review/today/tasks/${taskId}`,
+    token,
+    JSON.stringify({ action: action }),
     15000,
     30000
   );

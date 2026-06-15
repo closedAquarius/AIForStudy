@@ -1,4 +1,5 @@
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { router } from '@kit.ArkUI';
 import { FeaturePageHeader } from '../components/FeaturePageHeader';
 import { FeatureBottomNav } from '../components/FeatureBottomNav';
 import { generateQuestionsFromFile, GeneratedQuestion, UploadGenerateOptions } from '../common/ApiClient';
@@ -20,6 +21,7 @@ struct SetQuestionPage {
   @State uploadProgress: string = '';
   @State loading: boolean = false;
   @State generatedQuestions: GeneratedQuestion[] = [];
+  @State savedBankId: number = 0;
 
   private toNumber(value: string, fallback: number): number {
     const parsed = Number(value);
@@ -93,6 +95,7 @@ struct SetQuestionPage {
     this.message = '正在上传文件并调用 AI 生成题目...';
     this.uploadProgress = '文件上传中';
     this.generatedQuestions = [];
+    this.savedBankId = 0;
 
     try {
       const options: UploadGenerateOptions = {
@@ -113,8 +116,9 @@ struct SetQuestionPage {
       if (result.success && result.data) {
         this.generatedQuestions = result.data.questions;
         if (result.data.saved) {
+          this.savedBankId = result.data.saved.question_bank_id;
           const textInfo = result.data.document ? `解析文本 ${result.data.document.text_length} 字，` : '';
-          this.message = `${textInfo}生成并保存成功，共 ${result.data.saved.saved_count} 道题，题库ID：${result.data.saved.question_bank_id}。`;
+          this.message = `${textInfo}已生成 ${result.data.saved.saved_count} 道待审核题目，请进入编辑器检查后发布。`;
         } else {
           this.message = `生成成功，共 ${this.generatedQuestions.length} 道题。`;
         }
@@ -410,6 +414,23 @@ struct SetQuestionPage {
               }, (item: GeneratedQuestion, index: number) => `${index}-${item.stem}`)
             }
             .width('100%')
+          }
+
+          if (this.savedBankId > 0) {
+            Button('审核并发布题目')
+              .width('100%')
+              .height(46)
+              .fontSize(15)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#FFFFFF')
+              .backgroundColor('#B45309')
+              .borderRadius(8)
+              .onClick(() => {
+                router.pushUrl({
+                  url: 'pages/QuestionEditorPage',
+                  params: { bankId: this.savedBankId.toString() }
+                });
+              })
           }
         }
         .width('100%')

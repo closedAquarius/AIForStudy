@@ -5,6 +5,7 @@ from pathlib import Path
 
 from db import db_cursor
 from dotenv import load_dotenv
+from services.zhipu_client import ZhipuChatClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -25,14 +26,7 @@ class DiaryService:
 
         model = os.getenv("ZHIPU_MODEL", "glm-4.7-flash")
 
-        try:
-            from zai import ZhipuAiClient
-        except ImportError as exc:
-            raise RuntimeError("请先安装智谱 SDK: pip install zai-sdk") from exc
-
-        client = ZhipuAiClient(api_key=api_key)
-        response = client.chat.completions.create(
-            model=model,
+        return ZhipuChatClient(api_key, model).complete(
             messages=[
                 {
                     "role": "system",
@@ -48,14 +42,6 @@ class DiaryService:
             max_tokens=4096,
             temperature=0.5,
         )
-
-        message = response.choices[0].message
-        result = getattr(message, "content", None)
-        if result is None and isinstance(message, dict):
-            result = message.get("content")
-        if not isinstance(result, str):
-            result = str(message)
-        return result.strip()
 
     def list_entries(self, user_id):
         with db_cursor() as cursor:

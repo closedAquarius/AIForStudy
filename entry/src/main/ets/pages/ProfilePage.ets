@@ -10,6 +10,7 @@ import {
   getProfileOverview,
   getKnowledgeGraph
 } from '../common/ApiClient';
+import { APP_THEMES, AppTheme, DEFAULT_THEME_ID, getAppTheme, updateAppTheme } from '../common/Theme';
 
 @Component
 struct ProfileStatItem {
@@ -27,21 +28,22 @@ struct ProfileStatItem {
 
       Text(this.label)
         .fontSize(11)
-        .fontColor('#64748B')
+        .fontColor(getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined).textSecondary)
         .maxLines(1)
     }
     .layoutWeight(1)
     .height(76)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined).surfaceBackground)
     .borderRadius(8)
-    .border({ width: 1, color: '#E5EAF3' })
+    .border({ width: 1, color: getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined).border })
   }
 }
 
 @Entry
 @Component
 struct ProfilePage {
+  @StorageLink('appThemeId') themeId: string = DEFAULT_THEME_ID;
   @State username: string = '';
   @State nickname: string = '';
   @State email: string = '';
@@ -257,6 +259,15 @@ struct ProfilePage {
       return 4;
     }
     return Math.max(12, Math.round(count * 76 / this.maxActivityCount()));
+  }
+
+  private theme() {
+    return getAppTheme(this.themeId);
+  }
+
+  private changeTheme(themeId: string): void {
+    const theme = updateAppTheme(themeId);
+    this.themeId = theme.id;
   }
 
   private logout(): void {
@@ -575,15 +586,15 @@ struct ProfilePage {
           .height(24)
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
+          .fontColor(this.theme().accentContrast)
           .textAlign(TextAlign.Center)
-          .backgroundColor('#7C5CE7')
+          .backgroundColor(this.theme().accent)
           .borderRadius(6)
 
         Text('学习评价')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#0B1B44')
+          .fontColor(this.theme().textPrimary)
       }
       .width('100%')
 
@@ -591,13 +602,13 @@ struct ProfilePage {
         .width('100%')
         .fontSize(14)
         .lineHeight(22)
-        .fontColor('#334155')
+        .fontColor(this.theme().textSecondary)
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#F7F4FF')
+    .backgroundColor(this.theme().secondarySurface)
     .borderRadius(8)
-    .border({ width: 1, color: '#DDD5FF' })
+    .border({ width: 1, color: this.theme().border })
   }
 
   @Builder
@@ -605,7 +616,7 @@ struct ProfilePage {
     Column({ space: 12 }) {
       Row() {
         Text('知识掌握')
-          .fontSize(16).fontWeight(FontWeight.Bold).fontColor('#0B1B44')
+          .fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.theme().textPrimary)
         Blank()
         Text('查看图谱 >').fontSize(12).fontColor('#2D75FF')
       }
@@ -619,10 +630,10 @@ struct ProfilePage {
       Text(this.graphSummary.totalCount > 0
         ? `共 ${this.graphSummary.totalCount} 个知识点，仍有 ${this.graphSummary.unlearnedCount} 个尚未形成学习记录。`
         : '题目设置知识点后，这里会生成掌握图谱。')
-        .width('100%').fontSize(12).lineHeight(18).fontColor('#64748B')
+        .width('100%').fontSize(12).lineHeight(18).fontColor(this.theme().textSecondary)
     }
-    .width('100%').padding(16).backgroundColor('#F8FBFF')
-    .borderRadius(8).border({ width: 1, color: '#DCEAFF' })
+    .width('100%').padding(16).backgroundColor(this.theme().surfaceBackground)
+    .borderRadius(8).border({ width: 1, color: this.theme().border })
     .onClick(() => router.pushUrl({ url: 'pages/KnowledgeGraphPage' }))
   }
 
@@ -835,6 +846,67 @@ struct ProfilePage {
     })
   }
 
+  @Builder
+  ThemeSection() {
+    Column({ space: 12 }) {
+      Text('界面主题')
+        .width('100%')
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.theme().textPrimary)
+
+      Text('可以切换黑夜模式、护眼模式、夏日清爽和冬日暖阳。')
+        .width('100%')
+        .fontSize(12)
+        .lineHeight(18)
+        .fontColor(this.theme().textSecondary)
+
+      ForEach(APP_THEMES, (item: AppTheme) => {
+        Row({ space: 12 }) {
+          Row({ space: 6 }) {
+            Circle().width(12).height(12).fill(item.accent)
+            Circle().width(12).height(12).fill(item.pageBackground)
+            Circle().width(12).height(12).fill(item.warning)
+          }
+          .width(54)
+
+          Column({ space: 2 }) {
+            Text(item.name)
+              .fontSize(14)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.theme().textPrimary)
+            Text(item.description)
+              .fontSize(11)
+              .fontColor(this.theme().textSecondary)
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+
+          Text(this.themeId === item.id ? '当前使用' : '切换')
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.themeId === item.id ? item.accentContrast : item.accent)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .backgroundColor(this.themeId === item.id ? item.accent : item.accentSoft)
+            .borderRadius(12)
+        }
+        .width('100%')
+        .padding(12)
+        .backgroundColor(this.themeId === item.id ? this.theme().secondarySurface : this.theme().surfaceBackground)
+        .borderRadius(10)
+        .border({ width: 1.5, color: this.themeId === item.id ? item.accent : this.theme().border })
+        .onClick(() => {
+          this.changeTheme(item.id);
+        })
+      })
+    }
+    .width('100%')
+    .padding(16)
+    .backgroundColor(this.theme().surfaceBackground)
+    .borderRadius(8)
+    .border({ width: 1, color: this.theme().border })
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
@@ -843,8 +915,8 @@ struct ProfilePage {
           .width(38)
           .height(38)
           .fontSize(22)
-          .fontColor('#2D75FF')
-          .backgroundColor('#EEF5FF')
+          .fontColor(this.theme().accent)
+          .backgroundColor(this.theme().accentSoft)
           .borderRadius(19)
           .onClick(() => {
             router.back();
@@ -854,7 +926,7 @@ struct ProfilePage {
           .layoutWeight(1)
           .fontSize(21)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#0B1B44')
+          .fontColor(this.theme().textPrimary)
           .textAlign(TextAlign.Center)
 
         Blank()
@@ -863,7 +935,7 @@ struct ProfilePage {
       .width('100%')
       .height(62)
       .padding({ left: 18, right: 18, top: 8 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(this.theme().surfaceBackground)
 
       Scroll() {
         Column({ space: 16 }) {
@@ -872,7 +944,7 @@ struct ProfilePage {
               Circle()
                 .width(84)
                 .height(84)
-                .fill('#EAF3FF')
+                .fill(this.theme().accentSoft)
 
               this.Avatar()
             }
@@ -881,15 +953,15 @@ struct ProfilePage {
               Text(this.nickname.length > 0 ? this.nickname : '用户')
                 .fontSize(22)
                 .fontWeight(FontWeight.Bold)
-                .fontColor('#0B1B44')
+                .fontColor(this.theme().textPrimary)
 
               Text(`@${this.username.length > 0 ? this.username : 'user'}`)
                 .fontSize(13)
-                .fontColor('#7B879D')
+                .fontColor(this.theme().textMuted)
 
               Text(`${this.roleText()}${this.email.length > 0 ? ` · ${this.email}` : ''}`)
                 .fontSize(12)
-                .fontColor('#64748B')
+                .fontColor(this.theme().textSecondary)
                 .maxLines(1)
             }
             .layoutWeight(1)
@@ -928,6 +1000,8 @@ struct ProfilePage {
                 url: 'pages/FavoriteQuestionPage'
               });
             })
+
+          this.ThemeSection()
 
           if (this.loading) {
             Text('正在加载学习数据...')
@@ -1021,7 +1095,7 @@ struct ProfilePage {
       }
       .layoutWeight(1)
       .width('100%')
-      .backgroundColor('#F5F7FB')
+      .backgroundColor(this.theme().pageBackground)
       }
       .width('100%')
       .height('100%')

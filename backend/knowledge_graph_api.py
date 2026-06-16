@@ -2,11 +2,12 @@ from flask import Blueprint, request
 
 from api_utils import fail, require_current_user, success
 from db import db_cursor
+from services.knowledge_graph_service import KnowledgeGraphService
 
 knowledge_graph_bp = Blueprint("knowledge_graph_api", __name__)
 
 
-def _accessible_bank(cursor, bank_id, user_id):
+def _accessible_bank(cursor, bank_id: int, user_id: int):
     cursor.execute(
         """
         SELECT id,owner_user_id,name
@@ -19,70 +20,7 @@ def _accessible_bank(cursor, bank_id, user_id):
     return cursor.fetchone()
 
 
-def _sync_bank_graph(cursor, bank):
-    owner_id = int(bank["owner_user_id"])
-    bank_id = int(bank["id"])
-    cursor.execute(
-        """
-        INSERT INTO knowledge_nodes(owner_user_id,question_bank_id,node_type,name,description)
-        VALUES(%s,%s,'course',%s,'题库课程节点')
-        ON DUPLICATE KEY UPDATE updated_at=NOW()
-        """,
-        (owner_id, bank_id, bank["name"]),
-    )
-    cursor.execute(
-        "SELECT id FROM knowledge_nodes WHERE question_bank_id=%s AND node_type='course' LIMIT 1",
-        (bank_id,),
-    )
-    course_id = cursor.fetchone()["id"]
-    cursor.execute(
-        """
-        SELECT knowledge_point,MIN(id) first_question_id,COUNT(*) question_count
-        FROM questions
-        WHERE question_bank_id=%s AND status='active'
-          AND knowledge_point IS NOT NULL AND knowledge_point<>''
-        GROUP BY knowledge_point
-        ORDER BY first_question_id
-        """,
-        (bank_id,),
-    )
-    points = cursor.fetchall()
-    node_ids = []
-    for point in points:
-        cursor.execute(
-            """
-            INSERT INTO knowledge_nodes(owner_user_id,question_bank_id,node_type,name,description)
-            VALUES(%s,%s,'knowledge',%s,%s)
-            ON DUPLICATE KEY UPDATE description=VALUES(description),updated_at=NOW()
-            """,
-            (owner_id, bank_id, point["knowledge_point"], f"关联 {int(point['question_count'])} 道题"),
-        )
-        cursor.execute(
-            "SELECT id FROM knowledge_nodes WHERE question_bank_id=%s AND node_type='knowledge' AND name=%s",
-            (bank_id, point["knowledge_point"]),
-        )
-        node_id = cursor.fetchone()["id"]
-        node_ids.append(node_id)
-        cursor.execute(
-            """
-            INSERT IGNORE INTO knowledge_relations
-              (question_bank_id,source_node_id,target_node_id,relation_type,weight)
-            VALUES(%s,%s,%s,'contains',1)
-            """,
-            (bank_id, course_id, node_id),
-        )
-    for index in range(len(node_ids) - 1):
-        cursor.execute(
-            """
-            INSERT IGNORE INTO knowledge_relations
-              (question_bank_id,source_node_id,target_node_id,relation_type,weight)
-            VALUES(%s,%s,%s,'related',0.5)
-            """,
-            (bank_id, node_ids[index], node_ids[index + 1]),
-        )
-
-
-def _node_level(answer_count, accuracy):
+def _node_level(answer_count: int, accuracy: float) -> str:
     if answer_count == 0:
         return "unlearned"
     if accuracy >= 80:
@@ -97,6 +35,7 @@ def get_knowledge_graph():
     user, error_response = require_current_user()
     if error_response:
         return error_response
+
     try:
         bank_id = int(request.args.get("bankId") or 0)
     except ValueError:
@@ -111,21 +50,35 @@ def get_knowledge_graph():
         else:
             cursor.execute(
                 """
-                SELECT id,owner_user_id,name FROM question_banks
+                SELECT id,owner_user_id,name
+                FROM question_banks
                 WHERE owner_user_id=%s OR visibility IN ('public','class')
-                ORDER BY updated_at DESC LIMIT 20
+                ORDER BY updated_at DESC
+                LIMIT 20
                 """,
                 (user["id"],),
             )
             banks = cursor.fetchall()
+
+        graph_service = KnowledgeGraphService()
         for bank in banks:
-            _sync_bank_graph(cursor, bank)
+            graph_service.sync_bank(cursor, bank)
 
         bank_ids = [int(bank["id"]) for bank in banks]
         if not bank_ids:
-            return success({"banks": [], "nodes": [], "relations": [], "summary": {
-                "totalCount": 0, "masteredCount": 0, "learningCount": 0, "weakCount": 0, "unlearnedCount": 0
-            }})
+            return success({
+                "banks": [],
+                "nodes": [],
+                "relations": [],
+                "summary": {
+                    "totalCount": 0,
+                    "masteredCount": 0,
+                    "learningCount": 0,
+                    "weakCount": 0,
+                    "unlearnedCount": 0,
+                },
+            })
+
         placeholders = ",".join(["%s"] * len(bank_ids))
         cursor.execute(
             f"""
@@ -148,19 +101,26 @@ def get_knowledge_graph():
             [user["id"], *bank_ids],
         )
         node_rows = cursor.fetchall()
+
         cursor.execute(
             f"""
-            SELECT kr.id,kr.question_bank_id,kr.source_node_id,kr.target_node_id,kr.relation_type,kr.weight
-            FROM knowledge_relations kr
-            WHERE kr.question_bank_id IN ({placeholders})
-            ORDER BY kr.id
+            SELECT id,question_bank_id,source_node_id,target_node_id,relation_type,weight
+            FROM knowledge_relations
+            WHERE question_bank_id IN ({placeholders})
+            ORDER BY id
             """,
             bank_ids,
         )
         relation_rows = cursor.fetchall()
 
     nodes = []
-    summary = {"totalCount": 0, "masteredCount": 0, "learningCount": 0, "weakCount": 0, "unlearnedCount": 0}
+    summary = {
+        "totalCount": 0,
+        "masteredCount": 0,
+        "learningCount": 0,
+        "weakCount": 0,
+        "unlearnedCount": 0,
+    }
     for row in node_rows:
         answer_count = int(row.get("answer_count") or 0)
         correct_count = int(row.get("correct_count") or 0)
@@ -182,6 +142,7 @@ def get_knowledge_graph():
             "accuracyRate": accuracy,
             "level": level,
         })
+
     return success({
         "banks": [{"id": int(bank["id"]), "name": bank["name"]} for bank in banks],
         "nodes": nodes,
@@ -195,3 +156,34 @@ def get_knowledge_graph():
         } for row in relation_rows],
         "summary": summary,
     })
+
+
+@knowledge_graph_bp.post("/knowledge-graph/sync")
+def sync_knowledge_graph():
+    user, error_response = require_current_user()
+    if error_response:
+        return error_response
+
+    body = request.get_json(silent=True) or {}
+    bank_id = int(body.get("bankId") or 0)
+    with db_cursor(commit=True) as cursor:
+        graph_service = KnowledgeGraphService()
+        if bank_id > 0:
+            bank = _accessible_bank(cursor, bank_id, user["id"])
+            if not bank:
+                return fail("题库不存在或无权访问", 404)
+            results = [graph_service.sync_bank(cursor, bank)]
+        else:
+            cursor.execute(
+                """
+                SELECT id,owner_user_id,name
+                FROM question_banks
+                WHERE owner_user_id=%s OR visibility IN ('public','class')
+                ORDER BY updated_at DESC
+                LIMIT 20
+                """,
+                (user["id"],),
+            )
+            results = [graph_service.sync_bank(cursor, bank) for bank in cursor.fetchall()]
+
+    return success({"results": [item for item in results if item]}, "知识图谱已同步")

@@ -1,21 +1,26 @@
 import { router } from '@kit.ArkUI';
+import { getAppTheme } from '../common/Theme';
 
 @Component
 export struct FeatureBottomNav {
   @Prop selectedIndex: number = 0;
+
+  private theme() {
+    return getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined);
+  }
 
   private goPage(index: number, url: string): void {
     if (this.selectedIndex === index) {
       return;
     }
 
-    // 功能页点击首页：回到原来的 MainPage，保留 MainPage 的用户名等状态
+    // 功能页点首页时回到原来的 MainPage，保留首页状态。
     if (index === 0) {
       router.back();
       return;
     }
 
-    // 从首页进入功能页：压入页面栈，保证功能页顶部返回按钮可以回首页
+    // 从首页进入功能页时压入页面栈，确保功能页顶部返回按钮可用。
     if (this.selectedIndex === 0) {
       router.pushUrl({
         url: url
@@ -23,7 +28,7 @@ export struct FeatureBottomNav {
       return;
     }
 
-    // 功能页之间切换：替换当前功能页，避免页面栈过深
+    // 功能页之间切换时替换当前页面，避免页面栈过深。
     router.replaceUrl({
       url: url
     });
@@ -38,7 +43,7 @@ export struct FeatureBottomNav {
             .width(50)
             .height(38)
             .borderRadius(15)
-            .backgroundColor('#EAF3FF')
+            .backgroundColor(this.theme().accentSoft)
         }
 
         Image(icon)
@@ -52,7 +57,7 @@ export struct FeatureBottomNav {
       Text(title)
         .fontSize(12)
         .fontWeight(this.selectedIndex === index ? FontWeight.Bold : FontWeight.Medium)
-        .fontColor(this.selectedIndex === index ? '#2D75FF' : '#8A96AD')
+        .fontColor(this.selectedIndex === index ? this.theme().accent : this.theme().textMuted)
         .maxLines(1)
     }
     .layoutWeight(1)
@@ -74,7 +79,7 @@ export struct FeatureBottomNav {
     .width('100%')
     .height(78)
     .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-    .backgroundColor('#F4FFFFFF')
-    .border({ width: 1, color: '#FFFFFFFF' })
+    .backgroundColor(this.theme().surfaceBackground)
+    .border({ width: 1, color: this.theme().border })
   }
 }

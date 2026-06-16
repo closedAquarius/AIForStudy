@@ -22,6 +22,7 @@ from werkzeug.utils import secure_filename
 
 from db import db_cursor
 from api_utils import success, fail, require_current_user
+from services.knowledge_graph_service import KnowledgeGraphService
 
 
 question_bank_bp = Blueprint("question_bank_api", __name__)
@@ -36,6 +37,10 @@ QUESTION_TYPE_LABELS = {
     "short_answer": "简答题",
     "essay": "论述题",
 }
+
+
+def sync_question_bank_graph(cursor, bank_id):
+    KnowledgeGraphService().sync_bank_by_id(cursor, int(bank_id))
 
 
 def to_bank_summary(row, current_user_id):
@@ -200,6 +205,7 @@ def create_question_bank_api():
             (user["id"], name, description),
         )
         bank_id = cursor.lastrowid
+        sync_question_bank_graph(cursor, bank_id)
         row = fetch_bank_summary(cursor, bank_id, user["id"])
 
     return success({"bank": to_bank_summary(row, user["id"])}, "题库创建成功", 201)
@@ -232,6 +238,7 @@ def update_question_bank_api(bank_id):
         if cursor.rowcount == 0:
             return fail("只能修改自己创建的题库", 403)
 
+        sync_question_bank_graph(cursor, bank_id)
         row = fetch_bank_summary(cursor, bank_id, user["id"])
 
     return success({"bank": to_bank_summary(row, user["id"])}, "题库名称已修改")
@@ -385,7 +392,8 @@ def create_question_bank_share(bank_id):
             "SELECT id FROM question_banks WHERE id=%s AND owner_user_id=%s",
             (bank_id, user["id"]),
         )
-        if not cursor.fetchone():
+        question_row = cursor.fetchone()
+        if not question_row:
             return fail("只能分享自己创建的题库", 403)
         cursor.execute(
             """
@@ -1306,6 +1314,7 @@ def create_question_api(bank_id):
         )
         question_id = cursor.lastrowid
         _replace_question_children(cursor, question_id, payload)
+        sync_question_bank_graph(cursor, bank_id)
     return success({"questionId": question_id}, "题目已创建", 201)
 
 
@@ -1321,12 +1330,13 @@ def update_question_api(question_id):
     with db_cursor(commit=True) as cursor:
         cursor.execute(
             """
-            SELECT q.id FROM questions q JOIN question_banks qb ON qb.id=q.question_bank_id
+            SELECT q.id,q.question_bank_id FROM questions q JOIN question_banks qb ON qb.id=q.question_bank_id
             WHERE q.id=%s AND qb.owner_user_id=%s
             """,
             (question_id, user["id"]),
         )
-        if not cursor.fetchone():
+        question_row = cursor.fetchone()
+        if not question_row:
             return fail("题目不存在或无权编辑", 404)
         cursor.execute(
             """
@@ -1337,6 +1347,7 @@ def update_question_api(question_id):
              payload["score"], payload["knowledge_point"], payload["status"], question_id),
         )
         _replace_question_children(cursor, question_id, payload)
+        sync_question_bank_graph(cursor, question_row["question_bank_id"])
     return success(None, "题目已更新")
 
 
@@ -1395,6 +1406,8 @@ def batch_update_questions(bank_id):
         else:
             return fail("不支持的批量操作")
         affected = cursor.rowcount
+        if affected > 0:
+            sync_question_bank_graph(cursor, bank_id)
     return success({"affectedCount": affected}, f"已处理 {affected} 道题")
 
 ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xls"}
@@ -1716,6 +1729,8 @@ def import_excel_questions_api(bank_id):
             """,
             (final_status, success_rows, failed_rows, joined_errors, import_id),
         )
+        if success_rows > 0:
+            sync_question_bank_graph(cursor, bank_id)
 
     if success_rows == 0:
         return fail(joined_errors or "没有题目导入成功", 400)

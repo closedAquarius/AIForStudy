@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from db import db_cursor
+from services.knowledge_graph_service import KnowledgeGraphService
 
 
 class QuestionPersistenceService:
@@ -46,6 +47,7 @@ class QuestionPersistenceService:
                         status=status,
                     )
                 )
+            KnowledgeGraphService().sync_bank_by_id(cursor, question_bank_id)
 
         return {
             "question_bank_id": question_bank_id,

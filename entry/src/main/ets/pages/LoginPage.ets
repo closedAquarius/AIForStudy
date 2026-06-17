@@ -13,6 +13,7 @@ struct LoginPage {
   @State password: string = '';
   @State message: string = '';
   @State loading: boolean = false;
+  @State passwordVisible: boolean = false;
 
   @State showResetDialog: boolean = false;
   @State resetEmail: string = '';
@@ -66,6 +67,7 @@ struct LoginPage {
 
     this.loading = true;
     this.message = '正在登录...';
+
     try {
       const result = await login(this.username.trim(), this.password);
       if (result.success && result.data?.user) {
@@ -121,9 +123,11 @@ struct LoginPage {
 
   private async sendResetCode(): Promise<void> {
     const email = this.resetEmail.trim();
+
     if (this.sendingCode || this.countdown > 0) {
       return;
     }
+
     if (email.length === 0 || email.indexOf('@') < 1) {
       this.resetMessage = '请输入正确的邮箱地址';
       return;
@@ -131,6 +135,7 @@ struct LoginPage {
 
     this.sendingCode = true;
     this.resetMessage = '正在发送验证码...';
+
     try {
       const result = await sendPasswordResetCode(email);
       if (result.success) {
@@ -150,18 +155,22 @@ struct LoginPage {
     if (this.resettingPassword) {
       return;
     }
+
     if (this.resetEmail.trim().length === 0) {
       this.resetMessage = '请输入邮箱';
       return;
     }
+
     if (this.resetCode.trim().length !== 6) {
       this.resetMessage = '请输入 6 位验证码';
       return;
     }
+
     if (this.resetPassword.length < 6) {
       this.resetMessage = '新密码至少需要 6 个字符';
       return;
     }
+
     if (this.resetPassword !== this.resetPasswordConfirm) {
       this.resetMessage = '两次输入的新密码不一致';
       return;
@@ -169,12 +178,14 @@ struct LoginPage {
 
     this.resettingPassword = true;
     this.resetMessage = '正在重置密码...';
+
     try {
       const result = await resetPasswordByEmail(
         this.resetEmail.trim(),
         this.resetCode.trim(),
         this.resetPassword
       );
+
       if (result.success) {
         this.message = '密码重置成功，请使用新密码登录';
         this.showResetDialog = false;
@@ -190,27 +201,100 @@ struct LoginPage {
   }
 
   @Builder
+  BrandHeader() {
+    Column({ space: 12 }) {
+      Text('AI For Study')
+        .fontSize(42)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#5267FF')
+        .textAlign(TextAlign.Center)
+
+      Text('AI赋能学习  智慧成就未来')
+        .fontSize(17)
+        .fontColor('#6B7280')
+        .textAlign(TextAlign.Center)
+    }
+    .width('100%')
+  }
+
+  @Builder
   LoginInput(placeholderText: string, isPassword: boolean) {
-    TextInput({
-      placeholder: placeholderText,
-      text: isPassword ? this.password : this.username
+    Row() {
+      Text(isPassword ? '锁' : '人')
+        .width(34)
+        .fontSize(20)
+        .fontColor('#9CA3AF')
+        .textAlign(TextAlign.Center)
+
+      TextInput({
+        placeholder: placeholderText,
+        text: isPassword ? this.password : this.username
+      })
+        .layoutWeight(1)
+        .height(50)
+        .type(isPassword && !this.passwordVisible ? InputType.Password : InputType.Normal)
+        .fontSize(17)
+        .fontColor('#1F2937')
+        .placeholderColor('#B7BBC3')
+        .caretColor('#4C6FFF')
+        .backgroundColor('#00000000')
+        .padding({ left: 8, right: 8 })
+        .onChange((value: string) => {
+          if (isPassword) {
+            this.password = value;
+          } else {
+            this.username = value;
+          }
+        })
+
+      if (isPassword) {
+        Text(this.passwordVisible ? '隐藏' : '显示')
+          .width(48)
+          .fontSize(14)
+          .fontColor('#9CA3AF')
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.passwordVisible = !this.passwordVisible;
+          })
+      }
+    }
+    .width('82%')
+    .height(50)
+    .padding({ left: 18, right: 14 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(13)
+    .border({
+      width: 1,
+      color: '#E5E7EB'
     })
-      .width('84%')
-      .height(62)
-      .type(isPassword ? InputType.Password : InputType.Normal)
-      .fontSize(20)
-      .fontColor('#333333')
-      .placeholderColor('#9E9E9E')
-      .caretColor('#4D8FF7')
-      .backgroundColor('#E2E2E2')
-      .borderRadius(31)
-      .padding({ left: 24, right: 24 })
-      .onChange((value: string) => {
-        if (isPassword) {
-          this.password = value;
-        } else {
-          this.username = value;
-        }
+  }
+
+  @Builder
+  PrimaryButton(text: string) {
+    Button(text)
+      .width('82%')
+      .height(50)
+      .fontSize(24)
+      .fontWeight(FontWeight.Medium)
+      .fontColor('#FFFFFF')
+      .borderRadius(15)
+      .backgroundColor('#00000000')
+      .linearGradient({
+        direction: GradientDirection.Right,
+        colors: [
+          ['#3F66FF', 0.0],
+          ['#914CFF', 1.0]
+        ]
+      })
+      .shadow({
+        radius: 14,
+        color: '#332F5BFF',
+        offsetX: 0,
+        offsetY: 8
+      })
+      .enabled(!this.loading)
+      .onClick(() => {
+        this.doLogin();
       })
   }
 
@@ -218,13 +302,15 @@ struct LoginPage {
   ResetInput(placeholderText: string, inputType: InputType, value: string, action: (value: string) => void) {
     TextInput({ placeholder: placeholderText, text: value })
       .width('100%')
-      .height(44)
+      .height(46)
       .type(inputType)
       .fontSize(14)
       .fontColor('#1F2937')
-      .backgroundColor('#F3F5F8')
-      .borderRadius(8)
-      .padding({ left: 12, right: 12 })
+      .placeholderColor('#A8AFBC')
+      .caretColor('#4C6FFF')
+      .backgroundColor('#F6F7FB')
+      .borderRadius(10)
+      .padding({ left: 14, right: 14 })
       .onChange(action)
   }
 
@@ -233,17 +319,17 @@ struct LoginPage {
     Column({ space: 14 }) {
       Row() {
         Text('找回密码')
-          .fontSize(19)
+          .fontSize(20)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#0B1B44')
+          .fontColor('#111827')
           .layoutWeight(1)
 
-        Button('x')
+        Button('×')
           .width(32)
           .height(32)
-          .fontSize(14)
-          .fontColor('#64748B')
-          .backgroundColor('#EEF2F7')
+          .fontSize(18)
+          .fontColor('#6B7280')
+          .backgroundColor('#F3F4F6')
           .borderRadius(8)
           .onClick(() => {
             this.closeResetDialog();
@@ -255,7 +341,7 @@ struct LoginPage {
         .width('100%')
         .fontSize(12)
         .lineHeight(18)
-        .fontColor('#64748B')
+        .fontColor('#6B7280')
 
       this.ResetInput('请输入绑定邮箱', InputType.Email, this.resetEmail, (value: string) => {
         this.resetEmail = value;
@@ -264,13 +350,16 @@ struct LoginPage {
       Row({ space: 8 }) {
         TextInput({ placeholder: '6 位验证码', text: this.resetCode })
           .layoutWeight(1)
-          .height(44)
+          .height(46)
           .type(InputType.Number)
           .maxLength(6)
           .fontSize(14)
-          .backgroundColor('#F3F5F8')
-          .borderRadius(8)
-          .padding({ left: 12, right: 12 })
+          .fontColor('#1F2937')
+          .placeholderColor('#A8AFBC')
+          .caretColor('#4C6FFF')
+          .backgroundColor('#F6F7FB')
+          .borderRadius(10)
+          .padding({ left: 14, right: 14 })
           .onChange((value: string) => {
             this.resetCode = value;
           })
@@ -280,12 +369,12 @@ struct LoginPage {
             ? '发送中'
             : (this.countdown > 0 ? `${this.countdown}s` : '获取验证码')
         )
-          .width(104)
-          .height(44)
+          .width(106)
+          .height(46)
           .fontSize(12)
-          .fontColor(this.countdown > 0 ? '#94A3B8' : '#2563EB')
-          .backgroundColor('#EEF5FF')
-          .borderRadius(8)
+          .fontColor(this.countdown > 0 ? '#9CA3AF' : '#4C6FFF')
+          .backgroundColor('#EEF2FF')
+          .borderRadius(10)
           .enabled(!this.sendingCode && this.countdown === 0)
           .onClick(() => {
             this.sendResetCode();
@@ -303,12 +392,19 @@ struct LoginPage {
 
       Button(this.resettingPassword ? '重置中...' : '确认重置密码')
         .width('100%')
-        .height(46)
+        .height(48)
         .fontSize(15)
         .fontWeight(FontWeight.Medium)
         .fontColor('#FFFFFF')
-        .backgroundColor('#4387F5')
-        .borderRadius(8)
+        .backgroundColor('#00000000')
+        .linearGradient({
+          direction: GradientDirection.Right,
+          colors: [
+            ['#3F66FF', 0.0],
+            ['#914CFF', 1.0]
+          ]
+        })
+        .borderRadius(10)
         .enabled(!this.resettingPassword)
         .onClick(() => {
           this.confirmResetPassword();
@@ -329,58 +425,49 @@ struct LoginPage {
 
       Button('取消')
         .width('100%')
-        .height(40)
+        .height(42)
         .fontSize(14)
-        .fontColor('#475569')
-        .backgroundColor('#EEF2F7')
-        .borderRadius(8)
+        .fontColor('#4B5563')
+        .backgroundColor('#F3F4F6')
+        .borderRadius(10)
         .onClick(() => {
           this.closeResetDialog();
         })
     }
     .width('86%')
-    .padding(18)
+    .padding(20)
     .backgroundColor('#FFFFFF')
-    .borderRadius(8)
+    .borderRadius(18)
     .shadow({
-      radius: 20,
-      color: '#330B1B44',
+      radius: 24,
+      color: '#33000000',
       offsetX: 0,
-      offsetY: 8
+      offsetY: 10
     })
   }
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      Image($r('app.media.login_background'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-
       Column() {
-        Column({ space: 14 }) {
-          Text('AI For Study')
-            .fontSize(42)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#5A96D8')
-            .textAlign(TextAlign.Center)
+        Blank()
+          .height('18%')
 
-          Text('AI 赋能学习 · 智慧成就未来')
-            .fontSize(20)
-            .fontColor('#7A7A7A')
-            .textAlign(TextAlign.Center)
-        }
-        .width('100%')
-        .margin({ top: 142 })
+        this.BrandHeader()
 
-        Column({ space: 24 }) {
-          this.LoginInput('请输入用户名', false)
-          this.LoginInput('请输入密码', true)
+        Blank()
+          .height(60)
+
+        Column({ space: 20 }) {
+          this.LoginInput('用户名', false)
+          this.LoginInput('密码', true)
+
+          Blank()
+            .height(30)
 
           Row() {
             Text('忘记密码？')
               .fontSize(16)
-              .fontColor('#4D8FF7')
+              .fontColor('#6B7280')
               .onClick(() => {
                 this.openResetDialog();
               })
@@ -389,50 +476,38 @@ struct LoginPage {
 
             Text('立即注册  >')
               .fontSize(16)
-              .fontColor('#4D8FF7')
+              .fontColor('#3F66FF')
               .onClick(() => {
                 router.pushUrl({
                   url: 'pages/RegisterPage'
                 });
               })
           }
-          .width('84%')
+          .width('82%')
+          .margin({ top: -6 })
 
-          Button(this.loading ? '登录中...' : '立即登录')
-            .width('84%')
-            .height(58)
-            .fontSize(24)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#FFFFFF')
-            .borderRadius(29)
-            .backgroundColor('#4387F5')
-            .enabled(!this.loading)
-            .onClick(() => {
-              this.doLogin();
-            })
+          this.PrimaryButton(this.loading ? '登录中...' : '登录')
 
           if (this.message.length > 0) {
             Text(this.message)
-              .width('84%')
+              .width('82%')
               .fontSize(13)
               .fontColor(
                 this.message.indexOf('成功') >= 0 || this.message.indexOf('正在') >= 0
-                  ? '#2563EB'
+                  ? '#3F66FF'
                   : '#DC2626'
               )
               .textAlign(TextAlign.Center)
           }
         }
-        .width('86%')
-        .height(365)
-        .justifyContent(FlexAlign.Center)
+        .width('100%')
         .alignItems(HorizontalAlign.Center)
-        .backgroundColor('#EFFFFFFF')
-        .borderRadius(22)
-        .margin({ top: 24 })
+
+        Blank()
       }
       .width('100%')
       .height('100%')
+      .backgroundColor('#FFFFFF')
       .alignItems(HorizontalAlign.Center)
 
       if (this.showResetDialog) {

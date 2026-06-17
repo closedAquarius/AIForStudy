@@ -9,6 +9,7 @@ struct RegisterPage {
   @State nickname: string = '';
   @State message: string = '';
   @State loading: boolean = false;
+  @State passwordVisible: boolean = false;
 
   private checkInput(): boolean {
     if (this.username.trim().length === 0) {
@@ -70,132 +71,171 @@ struct RegisterPage {
   }
 
   @Builder
-  RegisterInput(placeholderText: string, valueType: string) {
-    if (valueType === 'username') {
-      TextInput({ placeholder: placeholderText, text: this.username })
-        .width('84%')
-        .height(56)
-        .fontSize(18)
-        .fontColor('#333333')
-        .placeholderColor('#9E9E9E')
-        .caretColor('#4D8FF7')
-        .backgroundColor('#E2E2E2')
-        .borderRadius(28)
-        .padding({ left: 22, right: 22 })
-        .onChange((value: string) => {
-          this.username = value;
-        })
-    } else if (valueType === 'nickname') {
-      TextInput({ placeholder: placeholderText, text: this.nickname })
-        .width('84%')
-        .height(56)
-        .fontSize(18)
-        .fontColor('#333333')
-        .placeholderColor('#9E9E9E')
-        .caretColor('#4D8FF7')
-        .backgroundColor('#E2E2E2')
-        .borderRadius(28)
-        .padding({ left: 22, right: 22 })
-        .onChange((value: string) => {
-          this.nickname = value;
-        })
-    } else {
-      TextInput({ placeholder: placeholderText, text: this.password })
-        .width('84%')
-        .height(56)
-        .type(InputType.Password)
-        .fontSize(18)
-        .fontColor('#333333')
-        .placeholderColor('#9E9E9E')
-        .caretColor('#4D8FF7')
-        .backgroundColor('#E2E2E2')
-        .borderRadius(28)
-        .padding({ left: 22, right: 22 })
-        .onChange((value: string) => {
-          this.password = value;
-        })
+  BrandHeader() {
+    Column({ space: 12 }) {
+      Text('AI For Study')
+        .fontSize(42)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#5267FF')
+        .textAlign(TextAlign.Center)
+
+      Text('AI赋能学习  智慧成就未来')
+        .fontSize(17)
+        .fontColor('#6B7280')
+        .textAlign(TextAlign.Center)
     }
+    .width('100%')
+  }
+
+  @Builder
+  RegisterInput(placeholderText: string, valueType: string) {
+    Row() {
+      Text(valueType === 'password' ? '锁' : '人')
+        .width(34)
+        .fontSize(20)
+        .fontColor('#9CA3AF')
+        .textAlign(TextAlign.Center)
+
+      if (valueType === 'username') {
+        TextInput({ placeholder: placeholderText, text: this.username })
+          .layoutWeight(1)
+          .height(50)
+          .fontSize(17)
+          .fontColor('#1F2937')
+          .placeholderColor('#B7BBC3')
+          .caretColor('#4C6FFF')
+          .backgroundColor('#00000000')
+          .padding({ left: 8, right: 8 })
+          .onChange((value: string) => {
+            this.username = value;
+          })
+      } else if (valueType === 'nickname') {
+        TextInput({ placeholder: placeholderText, text: this.nickname })
+          .layoutWeight(1)
+          .height(50)
+          .fontSize(17)
+          .fontColor('#1F2937')
+          .placeholderColor('#B7BBC3')
+          .caretColor('#4C6FFF')
+          .backgroundColor('#00000000')
+          .padding({ left: 8, right: 8 })
+          .onChange((value: string) => {
+            this.nickname = value;
+          })
+      } else {
+        TextInput({ placeholder: placeholderText, text: this.password })
+          .layoutWeight(1)
+          .height(50)
+          .type(this.passwordVisible ? InputType.Normal : InputType.Password)
+          .fontSize(17)
+          .fontColor('#1F2937')
+          .placeholderColor('#B7BBC3')
+          .caretColor('#4C6FFF')
+          .backgroundColor('#00000000')
+          .padding({ left: 8, right: 8 })
+          .onChange((value: string) => {
+            this.password = value;
+          })
+
+        Text(this.passwordVisible ? '隐藏' : '显示')
+          .width(48)
+          .fontSize(14)
+          .fontColor('#9CA3AF')
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.passwordVisible = !this.passwordVisible;
+          })
+      }
+    }
+    .width('82%')
+    .height(50)
+    .padding({ left: 18, right: 14 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(13)
+    .border({
+      width: 1,
+      color: '#E5E7EB'
+    })
+  }
+
+  @Builder
+  PrimaryButton(text: string) {
+    Button(text)
+      .width('82%')
+      .height(50)
+      .fontSize(24)
+      .fontWeight(FontWeight.Medium)
+      .fontColor('#FFFFFF')
+      .borderRadius(15)
+      .backgroundColor('#00000000')
+      .linearGradient({
+        direction: GradientDirection.Right,
+        colors: [
+          ['#3F66FF', 0.0],
+          ['#914CFF', 1.0]
+        ]
+      })
+      .shadow({
+        radius: 14,
+        color: '#332F5BFF',
+        offsetX: 0,
+        offsetY: 8
+      })
+      .enabled(!this.loading)
+      .onClick(() => {
+        this.doRegister();
+      })
   }
 
   build() {
-    Stack() {
-      Image($r('app.media.login_background'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-
+    Stack({ alignContent: Alignment.Center }) {
       Column() {
-        Column({ space: 14 }) {
-          Text('创建账号')
-            .fontSize(40)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#5A96D8')
-            .textAlign(TextAlign.Center)
+        Blank()
+          .height('15%')
 
-          Text('加入 AI 辅学，开启智慧学习')
-            .fontSize(20)
-            .fontColor('#7A7A7A')
-            .textAlign(TextAlign.Center)
-        }
-        .width('100%')
-        .margin({ top: 128 })
+        this.BrandHeader()
 
-        Column() {
-          Column({ space: 22 }) {
-            this.RegisterInput('请输入用户名', 'username')
+        Blank()
+          .height(62)
 
-            this.RegisterInput('请输入昵称', 'nickname')
+        Column({ space: 20 }) {
+          this.RegisterInput('用户名', 'username')
+          this.RegisterInput('昵称（可选）', 'nickname')
+          this.RegisterInput('密码', 'password')
 
-            this.RegisterInput('请输入密码', 'password')
+          Blank()
+            .height(30)
 
-            Button(this.loading ? '注册中...' : '立即注册')
-              .width('84%')
-              .height(58)
-              .fontSize(24)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#FFFFFF')
-              .borderRadius(29)
-              .backgroundColor('#00000000')
-              .linearGradient({
-                direction: GradientDirection.Right,
-                colors: [
-                  ['#4387F5', 0.0],
-                  ['#68A7FF', 1.0]
-                ]
-              })
-              .enabled(!this.loading)
-              .onClick(() => {
-                this.doRegister();
-              })
+          Row() {
 
             Text('已有账号？返回登录')
               .fontSize(16)
-              .fontColor('#4D8FF7')
+              .fontColor('#3F66FF')
               .onClick(() => {
                 router.back();
               })
-
-            if (this.message.length > 0) {
-              Text(this.message)
-                .width('84%')
-                .fontSize(13)
-                .fontColor(this.message.includes('成功') || this.message.includes('正在') ? '#2563EB' : '#DC2626')
-                .textAlign(TextAlign.Center)
-            }
           }
-          .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .margin({ top: 36 })
+          .width('82%')
+          .margin({ top: -2 })
+
+          this.PrimaryButton(this.loading ? '注册中...' : '注册')
+
+          if (this.message.length > 0) {
+            Text(this.message)
+              .width('82%')
+              .fontSize(13)
+              .fontColor(this.message.includes('成功') || this.message.includes('正在') ? '#3F66FF' : '#DC2626')
+              .textAlign(TextAlign.Center)
+          }
         }
-        .width('86%')
-        .height(430)
-        .borderRadius(22)
-        .backgroundColor('#EFFFFFFF')
+        .width('100%')
         .alignItems(HorizontalAlign.Center)
-        .margin({ top: 28 })
+
+        Blank()
       }
       .width('100%')
       .height('100%')
+      .backgroundColor('#FFFFFF')
       .alignItems(HorizontalAlign.Center)
     }
     .width('100%')

@@ -17,19 +17,29 @@ struct ProfileStatItem {
   @Prop value: string = '';
   @Prop label: string = '';
   @Prop color: string = '#0B1B44';
+  @Prop resource: Resource;
 
   build() {
-    Column({ space: 5 }) {
-      Text(this.value)
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.color)
-        .maxLines(1)
+    Row({ space: 15 }){
+      Image(this.resource)
+        .height(30)
+        .width(30)
+        .objectFit(ImageFit.Contain)
 
-      Text(this.label)
-        .fontSize(11)
-        .fontColor(getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined).textSecondary)
-        .maxLines(1)
+
+      Column({ space: 5 }) {
+        Text(this.value)
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.color)
+          .maxLines(1)
+
+        Text(this.label)
+          .fontSize(11)
+          .fontColor(getAppTheme(AppStorage.Get<string>('appThemeId') ?? undefined).textSecondary)
+          .maxLines(1)
+    }
+
     }
     .layoutWeight(1)
     .height(76)
@@ -622,9 +632,9 @@ struct ProfilePage {
       }
       .width('100%')
       Row({ space: 8 }) {
-        ProfileStatItem({ value: `${this.graphSummary.masteredCount}`, label: '已掌握', color: '#16A66A' })
-        ProfileStatItem({ value: `${this.graphSummary.learningCount}`, label: '学习中', color: '#2D75FF' })
-        ProfileStatItem({ value: `${this.graphSummary.weakCount}`, label: '薄弱', color: '#EF4444' })
+        ProfileStatItem({ value: `${this.graphSummary.masteredCount}`, label: '已掌握', color: '#16A66A', resource: $r('app.media.masted') })
+        ProfileStatItem({ value: `${this.graphSummary.learningCount}`, label: '学习中', color: '#2D75FF', resource: $r('app.media.isLearning') })
+        ProfileStatItem({ value: `${this.graphSummary.weakCount}`, label: '薄弱', color: '#EF4444', resource: $r('app.media.weak') })
       }
       .width('100%')
       Text(this.graphSummary.totalCount > 0
@@ -1020,14 +1030,14 @@ struct ProfilePage {
           }
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.totalAnswers}`, label: '累计答题', color: '#2D75FF' })
-            ProfileStatItem({ value: `${this.currentWrongCount}`, label: '当前错题', color: '#E05252' })
+            ProfileStatItem({ value: `${this.totalAnswers}`, label: '累计答题', color: '#2D75FF', resource: $r('app.media.answerRecords') })
+            ProfileStatItem({ value: `${this.currentWrongCount}`, label: '当前错题', color: '#E05252', resource: $r('app.media.mistakeRecords') })
           }
           .width('100%')
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.sessionCount}`, label: '练习次数', color: '#16A66A' })
-            ProfileStatItem({ value: this.studyTimeText(), label: '学习时长', color: '#F59E0B' })
+            ProfileStatItem({ value: `${this.sessionCount}`, label: '练习次数', color: '#16A66A', resource: $r('app.media.practiceRecords') })
+            ProfileStatItem({ value: this.studyTimeText(), label: '学习时长', color: '#F59E0B', resource: $r('app.media.LearningRecords') })
           }
           .width('100%')
 
@@ -1043,20 +1053,20 @@ struct ProfilePage {
               .fontColor('#0B1B44')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF' })
-              ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A' })
+              ProfileStatItem({ value: `${this.ownedBankCount}`, label: '我的题库', color: '#2D75FF', resource: $r('app.media.bank') })
+              ProfileStatItem({ value: `${this.availableBankCount}`, label: '可用题库', color: '#16A66A', resource: $r('app.media.availableBank') })
             }
             .width('100%')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7' })
-              ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D' })
+              ProfileStatItem({ value: `${this.ownedQuestionCount}`, label: '题库题目', color: '#7C5CE7', resource: $r('app.media.bankQuestion') })
+              ProfileStatItem({ value: `${this.aiGeneratedQuestionCount}`, label: 'AI 生成题', color: '#EC7A3D', resource: $r('app.media.aiQuestions') })
             }
             .width('100%')
 
             Row({ space: 10 }) {
-              ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5' })
-              ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252' })
+              ProfileStatItem({ value: `${this.documentCount}`, label: '上传资料', color: '#0EA5A5', resource: $r('app.media.myFile') })
+              ProfileStatItem({ value: `${this.aiConversationCount}`, label: 'AI 会话', color: '#E05252', resource: $r('app.media.chat') })
             }
             .width('100%')
           }
@@ -1067,11 +1077,12 @@ struct ProfilePage {
           .border({ width: 1, color: '#DCE4F0' })
 
           Row({ space: 10 }) {
-            ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7' })
+            ProfileStatItem({ value: `${this.diaryCount}`, label: '日记天数', color: '#7C5CE7', resource: $r('app.media.diary') })
             ProfileStatItem({
               value: this.diaryCount > 0 ? `${this.averageMood.toFixed(1)}/10` : '--',
               label: '平均心情',
-              color: '#EC7A3D'
+              color: '#EC7A3D',
+              resource: this.averageMood > 5 ? $r('app.media.avgHappy') : $r('app.media.avgUnhappy')
             })
           }
           .width('100%')

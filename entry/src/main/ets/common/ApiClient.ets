@@ -140,7 +140,7 @@ function createHttpHeader(contentType: string): HttpHeader {
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-const API_BASE_URL: string = 'http://192.168.144.1:5000/api';
+const API_BASE_URL: string = 'http://100.74.70.88:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {

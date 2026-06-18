@@ -220,11 +220,10 @@ struct LoginPage {
   @Builder
   LoginInput(placeholderText: string, isPassword: boolean) {
     Row() {
-      Text(isPassword ? '锁' : '人')
-        .width(34)
-        .fontSize(20)
-        .fontColor('#9CA3AF')
-        .textAlign(TextAlign.Center)
+      Image(isPassword ? $r('app.media.lock') : $r('app.media.user'))
+        .width(20)
+        .height(20)
+        .objectFit(ImageFit.Cover)
 
       TextInput({
         placeholder: placeholderText,
@@ -274,7 +273,7 @@ struct LoginPage {
     Button(text)
       .width('82%')
       .height(50)
-      .fontSize(24)
+      .fontSize(20)
       .fontWeight(FontWeight.Medium)
       .fontColor('#FFFFFF')
       .borderRadius(15)

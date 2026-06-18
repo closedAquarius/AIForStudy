@@ -90,11 +90,10 @@ struct RegisterPage {
   @Builder
   RegisterInput(placeholderText: string, valueType: string) {
     Row() {
-      Text(valueType === 'password' ? '锁' : '人')
-        .width(34)
-        .fontSize(20)
-        .fontColor('#9CA3AF')
-        .textAlign(TextAlign.Center)
+      Image(valueType === 'password' ? $r('app.media.lock') : $r('app.media.user'))
+        .width(20)
+        .height(20)
+        .objectFit(ImageFit.Cover)
 
       if (valueType === 'username') {
         TextInput({ placeholder: placeholderText, text: this.username })

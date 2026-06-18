@@ -22,41 +22,23 @@ struct TodayStudySummary {
   }
 
   build() {
-    Row({ space: 12 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle()
-          .width(40)
-          .height(40)
-          .fill(this.theme().successSoft)
-
-        Text(this.status === 'completed' ? '完' : '今')
-          .fontSize(14)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.theme().success)
-      }
-
-      Column({ space: 3 }) {
-        Text('今日学习')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.theme().textPrimary)
-
-        Text(this.summaryText())
-          .fontSize(11)
-          .fontColor(this.theme().textSecondary)
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
+    Row() {
+      Text(`今日学习：${this.summaryText()}`)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.theme().textPrimary)
+        .maxLines(1)
+        .layoutWeight(1)
 
       Text('>')
         .fontSize(20)
-        .fontColor(this.theme().success)
+        .fontColor(this.theme().accent)
     }
     .width('100%')
-    .height(62)
-    .padding({ left: 14, right: 14 })
-    .backgroundColor(this.theme().cardBackground)
-    .borderRadius(12)
+    .height(44)
+    .padding({ left: 22, right: 22 })
+    .backgroundColor(this.theme().surfaceBackground)
+    .borderRadius(14)
     .border({ width: 1, color: this.theme().border })
   }
 }
@@ -96,6 +78,7 @@ struct MainPage {
     if (token.length === 0) {
       return;
     }
+
     try {
       const result = await getTodayReviewPlan(token);
       if (result.success && result.data) {
@@ -118,6 +101,7 @@ struct MainPage {
     if (userText.length === 0) {
       return undefined;
     }
+
     try {
       return JSON.parse(userText) as LoginUser;
     } catch (_) {
@@ -203,47 +187,75 @@ struct MainPage {
   }
 
   @Builder
-  InfoBar(iconText: string, iconBg: string, iconColor: string, title: string, desc: string, pageUrl: string) {
-    Row({ space: 10 }) {
+  QuickNavItem(icon: Resource, title: string, pageUrl: string) {
+    Column({ space: 10 }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle()
-          .width(36)
-          .height(36)
-          .fill(iconBg)
-
-        Text(iconText)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(iconColor)
+        Image(icon)
+          .width(40)
+          .height(40)
+          .objectFit(ImageFit.Contain)
       }
 
-      Column({ space: 2 }) {
-        Text(title)
-          .fontSize(15)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.theme().textPrimary)
-
-        Text(desc)
-          .fontSize(11)
-          .fontColor(this.theme().textSecondary)
-          .maxLines(2)
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Text('>')
-        .fontSize(20)
-        .fontColor(iconColor)
+      Text(title)
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.theme().textPrimary)
+        .maxLines(1)
+        .textAlign(TextAlign.Center)
     }
     .width('100%')
-    .height(56)
-    .padding({ left: 14, right: 14 })
-    .backgroundColor(this.theme().surfaceBackground)
-    .borderRadius(12)
-    .border({ width: 1, color: this.theme().border })
+    .height(76)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
     .onClick(() => {
       this.goPage(pageUrl);
     })
+  }
+
+  @Builder
+  QuickNavBar() {
+    Grid() {
+      GridItem() {
+        this.QuickNavItem(
+          $r('app.media.mistakeBook'),
+          '错题本',
+          'pages/WrongQuestionBookPage'
+        )
+      }
+
+      GridItem() {
+        this.QuickNavItem(
+          $r('app.media.myStar'),
+          '收藏',
+          'pages/FavoriteQuestionPage'
+        )
+      }
+
+      GridItem() {
+        this.QuickNavItem(
+          $r('app.media.knowledgeBase'),
+          '文档知识库',
+          'pages/KnowledgeBasePage'
+        )
+      }
+
+      GridItem() {
+        this.QuickNavItem(
+          $r('app.media.knowledgeGraph'),
+          '知识图谱',
+          'pages/KnowledgeGraphPage'
+        )
+      }
+    }
+    .columnsTemplate('1fr 1fr 1fr 1fr')
+    .rowsTemplate('1fr')
+    .columnsGap(4)
+    .width('100%')
+    .height(92)
+    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+    .backgroundColor('#F8FFFFFF')
+    .borderRadius(22)
+    .border({ width: 1, color: this.theme().border })
   }
 
   @Builder
@@ -257,7 +269,7 @@ struct MainPage {
 
       Row() {
         Text(title)
-          .fontSize(18)
+          .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.theme().textPrimary)
           .layoutWeight(1)
@@ -304,148 +316,106 @@ struct MainPage {
   }
 
   @Builder
-  SloganBar() {
-    Row() {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle()
-          .width(38)
-          .height(38)
-          .fill(this.theme().accentSoft)
-
-        Text('AI')
-          .fontSize(14)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.theme().accent)
+  MainModuleGrid() {
+    Grid() {
+      GridItem() {
+        this.ModuleCard(
+          $r('app.media.big_icon1'),
+          '题库刷题',
+          '按标签、错题和学习状态筛选练习',
+          this.theme().cardBackground,
+          this.theme().accent,
+          'pages/PracticePage'
+        )
       }
-      .margin({ left: 14 })
 
-      Text('AI For Study')
-        .fontSize(14)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.theme().accent)
-        .layoutWeight(1)
-        .margin({ left: 10 })
+      GridItem() {
+        this.ModuleCard(
+          $r('app.media.big_icon2'),
+          '文档出题',
+          '上传 PPT 或 Word，交给 AI 生成题目',
+          this.theme().successSoft,
+          this.theme().success,
+          'pages/SetQuestionPage'
+        )
+      }
 
-      Text('>')
-        .fontSize(22)
-        .fontColor(this.theme().textMuted)
-        .margin({ right: 16 })
+      GridItem() {
+        this.ModuleCard(
+          $r('app.media.big_icon3'),
+          '学习日记',
+          '记录每日心得，结合 AI 做状态分析',
+          this.theme().secondarySurface,
+          this.theme().accent,
+          'pages/DiaryPage'
+        )
+      }
+
+      GridItem() {
+        this.ModuleCard(
+          $r('app.media.big_icon4'),
+          'AI辅学',
+          '提问答疑、错题讲解和学习规划',
+          this.theme().warningSoft,
+          this.theme().warning,
+          'pages/AiLearningPage'
+        )
+      }
     }
+    .columnsTemplate('1fr 1fr')
+    .columnsGap(14)
+    .rowsGap(14)
     .width('100%')
-    .height(50)
-    .borderRadius(22)
-    .backgroundColor(this.theme().surfaceBackground)
-    .border({ width: 1, color: this.theme().border })
-    .margin({ left: 22, right: 22, top: 12 })
+    .height(322)
+    .padding({ left: 22, right: 22 })
   }
 
   build() {
     Column() {
       Stack() {
-        Column()
+        Image($r('app.media.main_background2'))
           .width('100%')
           .height('100%')
-          .backgroundColor(this.theme().pageBackground)
+          .objectFit(ImageFit.Cover)
 
-        Scroll() {
+        Column() {
+          this.TopBar()
+
           Column() {
-            this.TopBar()
-
-            Column() {
-              TodayStudySummary({
-                completedCount: this.todayCompletedCount,
-                totalCount: this.todayTotalCount,
-                streakDays: this.todayStreakDays,
-                status: this.todayStatus
-              })
-            }
-            .margin({ left: 22, right: 22, top: 4 })
-            .onClick(() => {
-              this.goPage('pages/TodayStudyPage');
-            })
-
-            Column() {
-              this.InfoBar('!', this.theme().dangerSoft, this.theme().danger, '我的错题本', '集中查看错题、解析和 AI 讲解', 'pages/WrongQuestionBookPage')
-            }
-            .margin({ left: 22, right: 22, top: 6 })
-
-            Column() {
-              this.InfoBar('*', this.theme().warningSoft, this.theme().warning, '我的收藏', '集中复习收藏题目和个人笔记', 'pages/FavoriteQuestionPage')
-            }
-            .margin({ left: 22, right: 22, top: 8 })
-
-            Column() {
-              this.InfoBar('K', this.theme().accentSoft, this.theme().accent, '文档知识库', '上传课程资料，提问并查看答案来源', 'pages/KnowledgeBasePage')
-            }
-            .margin({ left: 22, right: 22, top: 8 })
-
-            Column() {
-              this.InfoBar('G', this.theme().successSoft, this.theme().success, '知识图谱', '查看知识结构、掌握程度与薄弱知识点', 'pages/KnowledgeGraphPage')
-            }
-            .margin({ left: 22, right: 22, top: 8 })
-
-            Grid() {
-              GridItem() {
-                this.ModuleCard(
-                  $r('app.media.big_icon1'),
-                  '题库刷题',
-                  '按标签、错题和学习状态筛选练习',
-                  this.theme().cardBackground,
-                  this.theme().accent,
-                  'pages/PracticePage'
-                )
-              }
-
-              GridItem() {
-                this.ModuleCard(
-                  $r('app.media.big_icon2'),
-                  '文档出题',
-                  '上传 PPT 或 Word，交给 AI 生成题目',
-                  this.theme().successSoft,
-                  this.theme().success,
-                  'pages/SetQuestionPage'
-                )
-              }
-
-              GridItem() {
-                this.ModuleCard(
-                  $r('app.media.big_icon3'),
-                  '学习日记',
-                  '记录每日心得，结合 AI 做状态分析',
-                  this.theme().secondarySurface,
-                  this.theme().accent,
-                  'pages/DiaryPage'
-                )
-              }
-
-              GridItem() {
-                this.ModuleCard(
-                  $r('app.media.big_icon4'),
-                  'AI辅学',
-                  '提问答疑、错题讲解和学习规划',
-                  this.theme().warningSoft,
-                  this.theme().warning,
-                  'pages/AiLearningPage'
-                )
-              }
-            }
-            .columnsTemplate('1fr 1fr')
-            .columnsGap(14)
-            .rowsGap(14)
-            .width('100%')
-            .height(322)
-            .padding({ left: 22, right: 22 })
-            .margin({ top: 12 })
-
-            Column() {
-              this.SloganBar()
-            }
-            .margin({ bottom: 18 })
+            this.QuickNavBar()
           }
           .width('100%')
-          .padding({ bottom: 16 })
+          .padding({ left: 22, right: 22 })
+          .margin({ top: 160 })
+
+          Scroll() {
+            Column() {
+              this.MainModuleGrid()
+            }
+            .width('100%')
+            .padding({ top: 14, bottom: 14 })
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .scrollBar(BarState.Off)
+
+          Column() {
+            TodayStudySummary({
+              completedCount: this.todayCompletedCount,
+              totalCount: this.todayTotalCount,
+              streakDays: this.todayStreakDays,
+              status: this.todayStatus
+            })
+          }
+          .width('100%')
+          .padding({ left: 22, right: 22 })
+          .margin({ bottom: 10 })
+          .onClick(() => {
+            this.goPage('pages/TodayStudyPage');
+          })
         }
-        .scrollBar(BarState.Off)
+        .width('100%')
+        .height('100%')
       }
       .layoutWeight(1)
       .width('100%')

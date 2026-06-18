@@ -140,7 +140,7 @@ function createHttpHeader(contentType: string): HttpHeader {
 type RequestBody = LoginRequest | RegisterRequest | GenerateQuestionsRequest | StudyDiarySaveRequest;
 type ResponseBody = ApiResult | GenerateQuestionsApiResult;
 
-const API_BASE_URL: string = 'http://100.79.44.56:5000/api';
+const API_BASE_URL: string = 'http://192.168.59.1:5000/api';
 
 function postJson(path: string, body: RequestBody): Promise<ResponseBody> {
   return new Promise((resolve: (value: ResponseBody) => void, reject: (reason: Error) => void) => {
@@ -1153,8 +1153,10 @@ export function updateProfile(
         header: header,
         extraData: body,
         expectDataType: http.HttpDataType.STRING,
-        connectTimeout: 10000,
-        readTimeout: 60000
+        connectTimeout: 15000,
+        // Increase read timeout because AI polishing may take longer for very large inputs
+        // Default was 60000 (60s). Extend to 180000 (3 minutes) to avoid client-side timeouts.
+        readTimeout: 180000
       },
       (error, response) => {
         request.destroy();

@@ -24,23 +24,44 @@ class DiaryService:
         if not api_key:
             raise ValueError("ZHIPU_API_KEY 未配置，无法使用AI润色")
 
-        model = os.getenv("ZHIPU_MODEL", "glm-4.7-flash")
+        model = os.getenv("ZHIPU_MODEL", "glm-4-flash")
+
+        # Configure max tokens for polishing. Keep a sensible default to avoid
+        # very long generation times when input is large. Can be overridden
+        # by environment `DIARY_POLISH_MAX_TOKENS`.
+        try:
+            default_max_tokens = int(os.getenv("DIARY_POLISH_MAX_TOKENS", "2048"))
+        except (TypeError, ValueError):
+            default_max_tokens = 512
+
+        # If the input content is very long, prefer a smaller generation size
+        # to reduce latency and avoid client-side timeouts.
+        content_len = len(content or "")
+        if content_len > 3000:
+            max_tokens = min(default_max_tokens, 1024)
+        else:
+            max_tokens = default_max_tokens
 
         return ZhipuChatClient(api_key, model).complete(
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "你是一名学习日记润色助手。用户会给你一篇学习日记的内容，"
-                        "请你对其进行润色优化，使表达更加流畅、结构更加清晰、用词更加准确，"
-                        "同时保持原文的核心意思和语气不变。"
-                        "只返回润色后的文本内容，不要加任何前缀、标注或解释。"
+                        "你是一名学习日记润色助手。用户会给你一篇简短的学习日记内容，"
+                        "你需要将其扩充为一段完整、连贯、有深度的学习反思。\n\n"
+                        "润色要求：\n"
+                        "1. 保持原文的核心意思和情感基调\n"
+                        "2. 扩充内容：遇到的困难、解决过程、个人思考\n"
+                        "3. 使表达更加生动、具体，避免空泛的表述，但不要过火\n"
+                        "4. 用词准确、句式多样，符合日记的文体风格\n"
+                        "5. 字数控制在70-130字之间\n\n"
+                        "重要：只返回润色后的完整文本内容，不要加任何前缀、标注或解释。"
                     ),
                 },
                 {"role": "user", "content": content},
             ],
-            max_tokens=4096,
-            temperature=0.5,
+            max_tokens=max_tokens,
+            temperature=0.7,
         )
 
     def list_entries(self, user_id):

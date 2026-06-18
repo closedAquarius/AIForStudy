@@ -106,8 +106,6 @@ struct DiaryPage {
   @State listVersion: number = 0;
 
   @State polishing: boolean = false;
-  @State showPolishCompare: boolean = false;
-  @State originalContent: string = '';
   @State polishedContent: string = '';
 
   @State customTagInput: string = '';
@@ -248,6 +246,7 @@ struct DiaryPage {
     this.formMessage = '';
     this.customTagInput = '';
     this.showCustomTagInput = false;
+    this.polishedContent = '';
   }
 
   private closeForm(): void {
@@ -515,10 +514,9 @@ struct DiaryPage {
     try {
       const result = await polishDiary(token, this.content.trim());
       if (result.success && result.data) {
-        this.originalContent = this.content;
         this.polishedContent = result.data.result;
-        this.showPolishCompare = true;
-        this.formMessage = '';
+        this.formMessage = 'AI润色完成，可在下方查看结果';
+        this.formMessageSuccess = true;
       } else {
         this.showFormMessage(result.message || 'AI润色失败', false);
       }
@@ -531,8 +529,12 @@ struct DiaryPage {
 
   private applyPolishedContent(): void {
     this.content = this.polishedContent;
-    this.showPolishCompare = false;
+    this.polishedContent = '';
     this.showFormMessage('已替换为润色后内容', true);
+  }
+
+  private dismissPolishResult(): void {
+    this.polishedContent = '';
   }
 
   private addCustomTag(): void {
@@ -1179,7 +1181,7 @@ struct DiaryPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 16, right: 16, top: 16, bottom: 84 })
+    .padding({ left: 16, right: 16, top: 16, bottom: 18 })
     .scrollBar(BarState.Off)
   }
 
@@ -1267,11 +1269,13 @@ struct DiaryPage {
           Button('编辑')
             .layoutWeight(1)
             .height(44)
+            .type(ButtonType.Normal)
             .borderRadius(10)
             .fontSize(15)
             .fontWeight(FontWeight.Bold)
             .backgroundColor('#8B67FF')
             .fontColor('#FFFFFF')
+            .border({ width: 1, color: '#7B57EF' })  // ✅ 添加边框，颜色稍深
             .onClick(() => {
               this.fillFormFromDetail();
             })
@@ -1279,6 +1283,7 @@ struct DiaryPage {
           Button('删除')
             .layoutWeight(1)
             .height(44)
+            .type(ButtonType.Normal)
             .borderRadius(10)
             .fontSize(15)
             .fontWeight(FontWeight.Bold)
@@ -1320,96 +1325,47 @@ struct DiaryPage {
   }
 
   @Builder
-  PolishComparePanel() {
-    Column({ space: 0 }) {
-      Row() {
-        Text('AI润色对比')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#0B1B44')
-
-        Blank()
-
-        Text('✕')
-          .fontSize(20)
-          .fontColor('#9CA3AF')
-          .onClick(() => {
-            this.showPolishCompare = false;
-          })
-      }
-      .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 14 })
-
-      Divider()
-        .color('#F0F0F5')
-        .margin({ left: 20, right: 20 })
-
-      Scroll() {
-        Column({ space: 16 }) {
-          Column({ space: 8 }) {
-            Row() {
-              Text('原内容')
-                .fontSize(13)
-                .fontColor('#8A96AD')
-                .fontWeight(FontWeight.Medium)
-            }
-            .width('100%')
-
-            Text(this.originalContent)
-              .width('100%')
-              .fontSize(14)
-              .fontColor('#5B6476')
-              .lineHeight(22)
-          }
-          .width('100%')
-          .padding(14)
-          .borderRadius(10)
-          .backgroundColor('#FFF7ED')
-          .border({ width: 1, color: '#FED7AA' })
-
-          Column({ space: 8 }) {
-            Row() {
-              Text('润色后')
-                .fontSize(13)
-                .fontColor('#8A96AD')
-                .fontWeight(FontWeight.Medium)
-
-              Blank()
-
-              Text('AI生成')
-                .fontSize(11)
-                .fontColor('#7152D1')
-                .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                .borderRadius(10)
-                .backgroundColor('#F3F0FF')
-            }
-            .width('100%')
-
-            Text(this.polishedContent)
-              .width('100%')
-              .fontSize(14)
-              .fontColor('#2D3748')
-              .lineHeight(22)
-          }
-          .width('100%')
-          .padding(14)
-          .borderRadius(10)
-          .backgroundColor('#F0FDF4')
-          .border({ width: 1, color: '#BBF7D0' })
-        }
-        .padding({ left: 20, right: 20, top: 14, bottom: 14 })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
-
+  PolishResultSection() {
+    if (this.polishedContent.length > 0) {
       Column({ space: 10 }) {
+        Row() {
+          Row({ space: 6 }) {
+            Text('✨')
+              .fontSize(14)
+            Text('AI润色结果')
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#7152D1')
+          }
+
+          Blank()
+
+          Text('✕')
+            .fontSize(14)
+            .fontColor('#9CA3AF')
+            .onClick(() => {
+              this.dismissPolishResult();
+            })
+        }
+        .width('100%')
+
+        Text(this.polishedContent)
+          .width('100%')
+          .fontSize(14)
+          .fontColor('#2D3748')
+          .lineHeight(22)
+          .padding(12)
+          .backgroundColor('#F0FDF4')
+          .borderRadius(8)
+          .border({ width: 1, color: '#BBF7D0' })
+
         Row({ space: 10 }) {
           Button('替换内容')
             .layoutWeight(1)
-            .height(44)
-            .borderRadius(10)
-            .fontSize(15)
+            .height(36)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .fontSize(13)
             .fontWeight(FontWeight.Bold)
             .backgroundColor('#8B67FF')
             .fontColor('#FFFFFF')
@@ -1417,33 +1373,27 @@ struct DiaryPage {
               this.applyPolishedContent();
             })
 
-          Button('取消')
+          Button('保留原文')
             .layoutWeight(1)
-            .height(44)
-            .borderRadius(10)
-            .fontSize(15)
+            .height(36)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .fontSize(13)
             .fontWeight(FontWeight.Bold)
             .backgroundColor('#F3F0FF')
             .fontColor('#7152D1')
             .onClick(() => {
-              this.showPolishCompare = false;
+              this.dismissPolishResult();
             })
         }
         .width('100%')
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 12, bottom: 18 })
-      .backgroundColor('#FFFFFF')
+      .padding(12)
+      .borderRadius(8)
+      .backgroundColor('#F8F5FF')
+      .border({ width: 1, color: '#E5DEFF' })
     }
-    .width('88%')
-    .borderRadius(16)
-    .backgroundColor('#FFFFFF')
-    .shadow({
-      radius: 24,
-      color: '#33000000',
-      offsetX: 0,
-      offsetY: 8
-    })
   }
 
   @Builder
@@ -1679,6 +1629,8 @@ struct DiaryPage {
         }
         .width('100%')
         .justifyContent(FlexAlign.End)
+
+        this.PolishResultSection()
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -1758,40 +1710,15 @@ struct DiaryPage {
         }
         .width('100%')
 
-        Stack({ alignContent: Alignment.BottomEnd }) {
-          Refresh({ refreshing: $$this.refreshing }) {
-            this.HistoryArea()
-          }
-          .width('100%')
-          .height('100%')
-          .backgroundColor('#F6F8FC')
-          .onRefreshing(() => {
-            this.loadHistory(true);
-          })
-
-          Button() {
-            Text('+')
-              .fontSize(28)
-              .fontColor('#FFFFFF')
-              .fontWeight(FontWeight.Bold)
-          }
-          .width(56)
-          .height(56)
-          .borderRadius(28)
-          .backgroundColor('#8B67FF')
-          .shadow({
-            radius: 12,
-            color: '#338B67FF',
-            offsetX: 0,
-            offsetY: 4
-          })
-          .margin({ right: 20, bottom: 20 })
-          .onClick(() => {
-            this.openCreateForm();
-          })
+        Refresh({ refreshing: $$this.refreshing }) {
+          this.HistoryArea()
         }
         .width('100%')
         .layoutWeight(1)
+        .backgroundColor('#F6F8FC')
+        .onRefreshing(() => {
+          this.loadHistory(true);
+        })
 
         FeatureBottomNav({
           selectedIndex: 3
@@ -1800,6 +1727,35 @@ struct DiaryPage {
       .width('100%')
       .height('100%')
       .backgroundColor('#F6F8FC')
+
+      Stack({ alignContent: Alignment.BottomEnd }) {
+        if (!this.showForm && !this.showDetail) {
+          Button() {
+            Text('+')
+              .fontSize(28)
+              .fontColor('#FFFFFF')
+              .fontWeight(FontWeight.Bold)
+          }
+          .width(56)
+          .height(56)
+          .type(ButtonType.Normal)
+          .borderRadius(28)
+          .backgroundColor('#8B67FF')
+          .shadow({
+            radius: 12,
+            color: '#338B67FF',
+            offsetX: 0,
+            offsetY: 4
+          })
+          .margin({ right: 20, bottom: 94 })
+          .onClick(() => {
+            this.openCreateForm();
+          })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .hitTestBehavior(HitTestMode.Transparent)
 
       if (this.showDetail) {
         Column()
@@ -1828,18 +1784,6 @@ struct DiaryPage {
         .width('100%')
         .height('100%')
         .scrollBar(BarState.Off)
-      }
-
-      if (this.showPolishCompare) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor('#66000000')
-          .onClick(() => {
-            this.showPolishCompare = false;
-          })
-
-        this.PolishComparePanel()
       }
 
       if (this.showCalendar) {

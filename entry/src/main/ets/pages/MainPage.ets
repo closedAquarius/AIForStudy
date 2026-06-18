@@ -30,9 +30,10 @@ struct TodayStudySummary {
         .maxLines(1)
         .layoutWeight(1)
 
-      Text('>')
-        .fontSize(20)
-        .fontColor(this.theme().accent)
+      Image($r('app.media.next_blue'))
+        .height(20)
+        .width(20)
+        .objectFit(ImageFit.Contain)
     }
     .width('100%')
     .height(44)
@@ -259,13 +260,13 @@ struct MainPage {
   }
 
   @Builder
-  ModuleCard(icon: Resource, title: string, desc: string, bgColor: string, arrowColor: string, pageUrl: string) {
+  ModuleCard(icon: Resource, title: string, desc: string, bgColor: string, next: Resource, pageUrl: string) {
     Column() {
       Image(icon)
         .width('76%')
         .height(76)
         .objectFit(ImageFit.Contain)
-        .margin({ top: 8 })
+        .margin({ top: 5 })
 
       Row() {
         Text(title)
@@ -277,13 +278,14 @@ struct MainPage {
 
         Stack({ alignContent: Alignment.Center }) {
           Circle()
-            .width(30)
-            .height(30)
+            .width(26)
+            .height(26)
             .fill(this.theme().surfaceBackground)
 
-          Text('>')
-            .fontSize(20)
-            .fontColor(arrowColor)
+          Image(next)
+            .height(22)
+            .width(22)
+            .objectFit(ImageFit.Contain)
         }
       }
       .width('100%')
@@ -296,7 +298,7 @@ struct MainPage {
         .fontColor(this.theme().textSecondary)
         .lineHeight(17)
         .padding({ left: 14, right: 10 })
-        .margin({ top: 4 })
+        .margin({ top: 2 })
         .maxLines(2)
     }
     .width('100%')
@@ -323,8 +325,8 @@ struct MainPage {
           $r('app.media.big_icon1'),
           '题库刷题',
           '按标签、错题和学习状态筛选练习',
-          this.theme().cardBackground,
-          this.theme().accent,
+          '#EDF7FF',
+          $r('app.media.next_blue'),
           'pages/PracticePage'
         )
       }
@@ -335,7 +337,7 @@ struct MainPage {
           '文档出题',
           '上传 PPT 或 Word，交给 AI 生成题目',
           this.theme().successSoft,
-          this.theme().success,
+          $r('app.media.next_green'),
           'pages/SetQuestionPage'
         )
       }
@@ -345,8 +347,8 @@ struct MainPage {
           $r('app.media.big_icon3'),
           '学习日记',
           '记录每日心得，结合 AI 做状态分析',
-          this.theme().secondarySurface,
-          this.theme().accent,
+          '#FCF6FF',
+          $r('app.media.next_purple'),
           'pages/DiaryPage'
         )
       }
@@ -357,7 +359,7 @@ struct MainPage {
           'AI辅学',
           '提问答疑、错题讲解和学习规划',
           this.theme().warningSoft,
-          this.theme().warning,
+          $r('app.media.next_yellow'),
           'pages/AiLearningPage'
         )
       }
